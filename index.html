@@ -1808,21 +1808,25 @@ async function manualSync() {
     }
 
     // ===== Smart header detection — scan first 5 rows for header =====
+    // (still useful for "known" columns; ALL other columns are also captured into _raw / sheetCols)
     const KEYWORDS = {
-      name: ['about', 'spec', 'name', 'ชื่อ', 'สินค้า', 'product', 'รายการ', 'description', 'item name'],
-      brand: ['brand', 'ยี่ห้อ', 'แบรนด์'],
-      status: ['status', 'สถานะ'],
-      cert: ['cert', 'certificate', 'ใบรับรอง'],
+      name:      ['about', 'spec', 'name', 'ชื่อ', 'สินค้า', 'product', 'รายการ', 'description', 'item name'],
+      brand:     ['brand', 'ยี่ห้อ', 'แบรนด์'],
+      status:    ['status', 'สถานะ'],
+      cert:      ['cert', 'certificate', 'ใบรับรอง'],
       stockFull: ['เต็ม', 'จำนวนเต็ม', 'full', 'initial'],
-      stock: ['คงเหลือ', 'stock', 'qty', 'จำนวน', 'on hand', 'available', 'balance'],
-      price: ['price', 'ราคา', 'sale price', 'unit price', 'ราคาขาย'],
-      cost: ['cost', 'ทุน', 'ต้นทุน'],
-      unit: ['unit', 'หน่วย'],
-      date: ['no.', 'date', 'วันที่', 'received']
+      stock:     ['คงเหลือ', 'stock', 'qty', 'จำนวน', 'on hand', 'available', 'balance'],
+      price:     ['price', 'ราคา', 'sale price', 'unit price', 'ราคาขาย'],
+      cost:      ['cost', 'ทุน', 'ต้นทุน'],
+      unit:      ['unit', 'หน่วย'],
+      category:  ['category', 'หมวด', 'หมวดหมู่', 'ประเภท', 'type'],
+      code:      ['code', 'sku', 'รหัส', 'item code', 'product code'],
+      date:      ['no.', 'date', 'วันที่', 'received']
     };
 
     let headerRowIdx = -1;
     let colMap = null;
+    let rawHeaders = []; // raw header names as they appear in the sheet
     for (let r = 0; r < Math.min(5, rows.length); r++) {
       const tryRow = rows[r].map(h => (h || '').toString().toLowerCase().trim());
       const m = {};
@@ -1833,17 +1837,21 @@ async function manualSync() {
           if (i >= 0) { m[key] = i; break; }
         }
       });
-      // Need at least: name OR stock
-      if (m.name >= 0 || m.stock >= 0 || m.stockFull >= 0) {
+      // Need at least: name OR stock OR code
+      if (m.name >= 0 || m.stock >= 0 || m.stockFull >= 0 || m.code >= 0) {
         headerRowIdx = r;
         colMap = m;
+        rawHeaders = rows[r].map(h => String(h || '').trim());
         break;
       }
     }
 
     if (headerRowIdx < 0) {
-      throw new Error('ไม่พบ Header row — ต้องมีคอลัมน์ที่มีคำเช่น "Spec", "About", "ชื่อ", "คงเหลือ", "จำนวน"');
+      throw new Error('ไม่พบ Header row — ต้องมีคอลัมน์ที่มีคำเช่น "Spec", "About", "ชื่อ", "คงเหลือ", "จำนวน", "Code"');
     }
+
+    // Persist the raw column headers globally so the Stock grid can render extra columns dynamically.
+    DB.set('sheetHeaders', rawHeaders);
 
     let products = DB.get('products', []);
     let updated = 0, added = 0, skipped = 0;
@@ -1856,53 +1864,97 @@ async function manualSync() {
       return isNaN(n) ? def : n;
     };
 
+    // Helper: turn a header name into a safe object key
+    const toKey = (h) => {
+      const s = String(h || '').trim();
+      if (!s) return '';
+      // Keep Thai chars + alphanumerics
+      return 'col_' + s.replace(/[^\p{L}\p{N}_]+/gu, '_').toLowerCase().slice(0, 50);
+    };
+
+    // Match by code first (most stable), then by name
+    const findExisting = (productName, productCode) => {
+      if (productCode) {
+        const byCode = products.find(p => p.code && p.code === productCode);
+        if (byCode) return byCode;
+      }
+      return products.find(p => p.name === productName);
+    };
+
     for (let i = headerRowIdx + 1; i < rows.length; i++) {
       const row = rows[i];
       if (!row || !row.some(c => c)) continue;
 
       // ===== Build product name: prefer Brand + Spec, fallback to Spec/Name alone =====
       const brandStr = String(get(row, colMap.brand, '')).trim();
-      const specStr = String(get(row, colMap.name, '')).trim();
+      const specStr  = String(get(row, colMap.name, '')).trim();
+      const codeStr  = String(get(row, colMap.code, '')).trim();
       let productName = '';
       if (brandStr && specStr) productName = `${brandStr} — ${specStr}`;
       else productName = specStr || brandStr;
 
+      // Fallback: use code as name if no name available
+      if (!productName && codeStr) productName = codeStr;
       if (!productName) { skipped++; continue; }
 
-      const stockVal = colMap.stock >= 0 ? getNum(row, colMap.stock, 0)
-                     : colMap.stockFull >= 0 ? getNum(row, colMap.stockFull, 0) : 0;
-      const status = get(row, colMap.status, '');
-      const cert = get(row, colMap.cert, '');
+      const stockVal     = colMap.stock >= 0     ? getNum(row, colMap.stock, 0)
+                         : colMap.stockFull >= 0 ? getNum(row, colMap.stockFull, 0) : 0;
       const initialStock = colMap.stockFull >= 0 ? getNum(row, colMap.stockFull, 0) : 0;
+      const priceVal     = colMap.price >= 0     ? getNum(row, colMap.price, 0) : 0;
+      const costVal      = colMap.cost >= 0      ? getNum(row, colMap.cost, 0) : 0;
+      const unitVal      = colMap.unit >= 0      ? String(get(row, colMap.unit, '')).trim() : '';
+      const categoryVal  = colMap.category >= 0  ? String(get(row, colMap.category, '')).trim() : '';
+      const status       = get(row, colMap.status, '');
+      const cert         = get(row, colMap.cert, '');
 
-      // Match by name (exact)
-      const existing = products.find(p => p.name === productName);
+      // ===== COPY ALL RAW DATA from sheet =====
+      // _raw: ordered array of all cells in this row (mirrors rawHeaders)
+      // _cols: dict of { col_<header>: value } for keyed access
+      const _raw = row.slice();
+      const _cols = {};
+      rawHeaders.forEach((h, idx) => {
+        const k = toKey(h);
+        if (k) _cols[k] = row[idx] !== undefined ? row[idx] : '';
+      });
+
+      const existing = findExisting(productName, codeStr);
       const nowIso = new Date().toISOString();
 
       if (existing) {
+        // Update — overwrite known fields, replace _raw/_cols (Sync = copy mirror image)
         existing.stock = stockVal;
         if (initialStock > 0) existing.initialStock = initialStock;
         if (brandStr) existing.brand = brandStr;
-        if (status) existing.statusText = status;
-        if (cert) existing.cert = cert;
-        existing.gsheetRow = i + 1;  // 1-indexed row number in sheet
+        if (codeStr)  existing.code = codeStr;
+        if (unitVal)  existing.unit = unitVal;
+        if (priceVal) existing.price = priceVal;
+        if (costVal)  existing.cost = costVal;
+        if (categoryVal) existing.category = categoryVal;
+        if (status)   existing.statusText = status;
+        if (cert)     existing.cert = cert;
+        existing._raw = _raw;
+        existing._cols = _cols;
+        existing.gsheetRow = i + 1;
         existing.lastSync = nowIso;
         updated++;
       } else {
-        // Create new product — NO SKU, name is identifier
         products.push({
           id: 'prod_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
           name: productName,
+          code: codeStr,
           brand: brandStr,
           spec: specStr,
-          unit: 'เส้น',
+          unit: unitVal || 'เส้น',
           stock: stockVal,
           initialStock: initialStock,
           minStock: 30,
+          price: priceVal,
+          cost: costVal,
+          category: categoryVal,
           statusText: status,
           cert: cert,
-          price: 0,
-          cost: 0,
+          _raw: _raw,
+          _cols: _cols,
           gsheetRow: i + 1,
           createdAt: nowIso,
           lastSync: nowIso,
@@ -1913,16 +1965,16 @@ async function manualSync() {
     }
 
     DB.set('products', products);
+    DB.set('lastSheetSync', new Date().toISOString());
 
     const now = new Date();
     const timeText = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
     setSyncStatus('ok', `Synced ${timeText}`);
-    toast(`✅ Sync สำเร็จ: เพิ่ม ${added}, อัปเดต ${updated}${skipped > 0 ? `, ข้าม ${skipped}` : ''}`, 'success', 4000);
+    toast(`✅ Sync สำเร็จ: เพิ่ม ${added}, อัปเดต ${updated}${skipped > 0 ? `, ข้าม ${skipped}` : ''} • คอลัมน์: ${rawHeaders.length}`, 'success', 4000);
 
     // Refresh current page if it's the stock page
-    if (currentPage === 'stock' || currentPage === 'sheet') {
-      const fn = currentPage === 'stock' ? renderStock : (typeof renderSheet === 'function' ? renderSheet : null);
-      if (fn) fn();
+    if (currentPage === 'stock') {
+      if (typeof renderStock === 'function') renderStock();
     }
 
   } catch (err) {
@@ -1946,7 +1998,9 @@ function startAutoSync() {
   clearInterval(syncInterval);
   const company = DB.get('company', {});
   if (!company.gsheetUrl) return;
-  const mins = parseInt(company.autoSyncMin) || 0;
+  // Default to 2 min if not configured — keeps stock in near-real-time sync
+  let mins = parseInt(company.autoSyncMin);
+  if (isNaN(mins) || mins < 0) mins = 2;
   if (mins > 0) {
     syncInterval = setInterval(() => manualSync(), mins * 60 * 1000);
   }
@@ -2378,7 +2432,7 @@ function filterQuotations() {
     <tr>
       <td class="td-mono">${escHtml(q.id)}</td>
       <td style="font-size:12px">${dateFmt(q.date)}</td>
-      <td>${escHtml(q.customerName)}</td>
+      <td>${escHtml(q.customerName)}${q.salesperson ? '<div class="td-sub" style="font-size:11px;color:var(--text3);margin-top:2px">👤 ' + escHtml(q.salesperson) + '</div>' : ''}</td>
       <td style="font-size:12px;color:var(--text3)">${escHtml(q.reference || '-')}</td>
       <td style="text-align:center">${q.items?.length || 0}</td>
       <td class="td-num">฿${numFmt(q.total)}</td>
@@ -2530,6 +2584,23 @@ function openDocModal(type, editId = null) {
           </div>
         </div>` : ''}
         
+        ${type === 'qt' ? `
+        <!-- QT-specific: Salesperson + Project + Contact -->
+        <div class="form-row cols-3">
+          <div class="form-group">
+            <label class="form-label">พนักงานขาย / Sales <span style="color:var(--kcb-orange);font-size:12px">★ แสดงในใบเสนอราคา</span></label>
+            <input class="form-control" id="docSalesperson" value="${escHtml(d.salesperson || '')}" placeholder="ชื่อพนักงานขายที่ดูแลลูกค้า">
+          </div>
+          <div class="form-group">
+            <label class="form-label">โครงการ / Project</label>
+            <input class="form-control" id="docProject" value="${escHtml(d.project || '')}" placeholder="ชื่อ/รหัสโครงการ (ถ้ามี)">
+          </div>
+          <div class="form-group">
+            <label class="form-label">ผู้ติดต่อลูกค้า / Contact</label>
+            <input class="form-control" id="docContact" value="${escHtml(d.contact || '')}" placeholder="ชื่อผู้ติดต่อ">
+          </div>
+        </div>` : ''}
+        
         <!-- Items Section -->
         <div class="form-section">
           <div class="form-section-title">
@@ -2616,6 +2687,12 @@ function saveDoc(type, editId, alsoPreview) {
     data.project = document.getElementById('docProject')?.value || '';
     data.contact = document.getElementById('docContact')?.value || '';
     data.contactTel = document.getElementById('docContactTel')?.value || '';
+  }
+  // QT specific — salesperson is rendered on the printed quotation
+  if (type === 'qt') {
+    data.salesperson = document.getElementById('docSalesperson')?.value || '';
+    data.project     = document.getElementById('docProject')?.value || '';
+    data.contact     = document.getElementById('docContact')?.value || '';
   }
   // INV initialization
   if (type === 'inv' && !editId) {
@@ -3151,7 +3228,7 @@ function filterPOs() {
       return base;
     }
 
-    // The actual HTML builder — printable A4 page
+    // The actual HTML builder — printable A4 page (with auto page break)
     function buildDocPreviewHTML(type, t, doc, party, company) {
       const items = doc.items || [];
       // Use the EXACT same calculation as elsewhere in the app
@@ -3179,8 +3256,8 @@ function filterPOs() {
         return `<th class="${c.align}"${w}><div>${escHtml(c.label)}</div><div class="th-en">${escHtml(c.labelEn)}</div></th>`;
       }).join('');
 
-      // Build body
-      const rowsHtml = items.map((it, i) => {
+      // Build individual row HTML (used per-page during pagination)
+      const buildRowHtml = (it, i) => {
         const qty = parseFloat(it.qty) || 0;
         const price = parseFloat(it.price) || 0;
         const discPct = parseFloat(it.discount) || 0;
@@ -3200,17 +3277,44 @@ function filterPOs() {
           return `<td>&nbsp;</td>`;
         }).join('');
         return `<tr>${tds}</tr>`;
-      }).join('');
+      };
 
-      // Empty filler rows to fill the page (mimics traditional Thai docs)
-      const minRows = 8;
-      const emptyCount = Math.max(0, minRows - items.length);
-      const emptyHtml = Array.from({ length: emptyCount }).map(() => {
-        const tds = colDefs.map(() => `<td>&nbsp;</td>`).join('');
-        return `<tr class="empty">${tds}</tr>`;
-      }).join('');
+      // ====== PAGINATION: split items into pages that fit A4 ======
+      // Rules (cf. user spec: A4 perfect fit, auto page-break with repeated header):
+      //   - First page: header + party/meta + items table + (totals + signs on LAST page only)
+      //   - Subsequent pages: header (smaller) + items continuation + (totals + signs on last)
+      //   - First page holds up to ITEMS_FIRST rows; later pages hold up to ITEMS_NEXT rows
+      const ITEMS_FIRST = 14;   // tuned to fit single A4 page with header+totals+signs at default fontSize
+      const ITEMS_NEXT  = 22;   // continuation pages have only repeated header + items
 
-      // Doc meta (always shown next to party)
+      // Determine if everything fits on a single page
+      const needsPagination = items.length > ITEMS_FIRST;
+      const pages = [];
+      if (!needsPagination) {
+        pages.push({ pageNum: 1, totalPages: 1, items: items.slice(), isFirst: true, isLast: true });
+      } else {
+        // Chunk items
+        const chunks = [];
+        chunks.push(items.slice(0, ITEMS_FIRST));
+        let cursor = ITEMS_FIRST;
+        while (cursor < items.length) {
+          chunks.push(items.slice(cursor, cursor + ITEMS_NEXT));
+          cursor += ITEMS_NEXT;
+        }
+        const totalPages = chunks.length;
+        chunks.forEach((ch, idx) => {
+          pages.push({
+            pageNum: idx + 1,
+            totalPages,
+            items: ch,
+            isFirst: idx === 0,
+            isLast: idx === chunks.length - 1,
+            startIndex: idx === 0 ? 0 : ITEMS_FIRST + (idx - 1) * ITEMS_NEXT
+          });
+        });
+      }
+
+      // Doc meta (always shown next to party — on the FIRST page only)
       const metaItems = [
         ['เลขที่ / No.', doc.id || '-'],
         ['วันที่ / Date', dateFmt(doc.docDate || doc.date || todayStr())]
@@ -3222,6 +3326,8 @@ function filterPOs() {
       if (doc.quotationRef || doc.quotationNo) metaItems.push(['อ้างอิง / Ref.', doc.quotationRef || doc.quotationNo]);
       if (doc.project) metaItems.push(['โครงการ / Project', doc.project]);
       if (doc.contact || party.contact) metaItems.push(['ผู้ติดต่อ / Contact', doc.contact || party.contact || '-']);
+      // Salesperson (QT only) — เพิ่มในใบเสนอราคา
+      if (type === 'qt' && doc.salesperson) metaItems.push(['พนักงานขาย / Sales', doc.salesperson]);
 
       const metaHtml = metaItems.map(([k, v]) => `
         <div class="meta-row"><span class="meta-k">${escHtml(k)}</span><span class="meta-v">${escHtml(String(v || '-'))}</span></div>
@@ -3248,6 +3354,121 @@ function filterPOs() {
       const headerCls = `head head-${t.headerStyle || 'modern'}`;
       const logoPosCls = `logo-pos-${t.logoPosition || 'left'}`;
 
+      // ====== Build the company-header HTML (re-used per page) ======
+      const companyHeaderHtml = `
+        <div class="${headerCls} ${logoPosCls}">
+          ${t.showLogo ? `<img src="${logoSrc}" class="logo-img" alt="logo">` : ''}
+          <div class="co">
+            <div class="co-name">${escHtml(company.name || 'บริษัท เคซีบี สลิง จำกัด')}</div>
+            ${company.nameEn ? `<div class="co-name-en">${escHtml(company.nameEn)}</div>` : ''}
+            ${t.showCompanyAddress && company.address ? `<div class="co-line">${escHtml(company.address)}</div>` : ''}
+            ${t.showCompanyContact ? `<div class="co-line">${[
+              company.tel ? 'โทร / Tel: ' + escHtml(company.tel) : '',
+              company.fax ? 'แฟกซ์: ' + escHtml(company.fax) : '',
+              company.email ? 'อีเมล: ' + escHtml(company.email) : '',
+              company.website ? 'เว็บ: ' + escHtml(company.website) : ''
+            ].filter(Boolean).join(' &nbsp;•&nbsp; ')}</div>` : ''}
+            ${t.showCompanyTaxId && company.taxId ? `<div class="co-line">เลขประจำตัวผู้เสียภาษี: ${escHtml(company.taxId)}${company.branch ? ' &nbsp;•&nbsp; สาขา: ' + escHtml(company.branch) : ''}</div>` : ''}
+          </div>
+          <div class="title-block">
+            <div class="doc-title">${escHtml(t.titleTh)}</div>
+            <div class="doc-title-en">${escHtml(t.titleEn)}</div>
+          </div>
+        </div>`;
+
+      const partyMetaHtml = `
+        <div class="top-grid">
+          <div class="party-card">
+            <div class="label">${escHtml(t.partyLabel)} / ${escHtml(t.partyLabelEn)}</div>
+            <div class="name">${escHtml(party.name || '-')}</div>
+            ${party.nameEn ? `<div class="name-en">${escHtml(party.nameEn)}</div>` : ''}
+            ${party.address ? `<div class="line">${escHtml(party.address)}</div>` : ''}
+            <div class="line">
+              ${party.tel ? 'โทร / Tel: ' + escHtml(party.tel) : ''}
+              ${party.taxId ? (party.tel ? ' &nbsp;•&nbsp; ' : '') + 'เลขภาษี: ' + escHtml(party.taxId) : ''}
+            </div>
+            ${party.branch && party.branch !== '-' ? `<div class="line">สาขา: ${escHtml(party.branch)}</div>` : ''}
+          </div>
+          <div class="meta-card">
+            ${metaHtml}
+          </div>
+        </div>`;
+
+      // ====== Build pages HTML ======
+      const pagesHtml = pages.map(p => {
+        // Page rows (use the actual index of each item in the full items[] for "ลำดับ")
+        const startIdx = p.startIndex || 0;
+        const rowsHtml = p.items.map((it, j) => buildRowHtml(it, startIdx + j)).join('');
+
+        // Last page must hold totals + signs. Last page also gets filler rows so its table
+        // body has visual weight (no awkward "1 row + signs" page).
+        let fillerHtml = '';
+        if (p.isLast) {
+          const minRowsLast = p.isFirst ? 8 : 4;
+          const fillerCount = Math.max(0, minRowsLast - p.items.length);
+          fillerHtml = Array.from({ length: fillerCount }).map(() => {
+            const tds = colDefs.map(() => `<td>&nbsp;</td>`).join('');
+            return `<tr class="empty">${tds}</tr>`;
+          }).join('');
+        }
+
+        const tableHtml = `
+          <table class="items">
+            <thead><tr>${thHtml}</tr></thead>
+            <tbody>
+              ${rowsHtml || `<tr><td colspan="${colDefs.length}" style="text-align:center;color:#9CA3AF;padding:18px">— ไม่มีรายการ —</td></tr>`}
+              ${fillerHtml}
+            </tbody>
+          </table>`;
+
+        // Totals + notes + bank + signs ONLY on last page
+        const totalsHtml = p.isLast ? `
+          <div class="totals-grid">
+            <div class="baht-box">
+              ${t.showBahtText ? `
+                <div class="lbl">จำนวนเงิน (ตัวอักษร) / Amount in Words</div>
+                <div class="val">( ${bahtText(calc.net || calc.total || 0)} )</div>
+              ` : '<div style="opacity:0.4;font-size:8pt;text-align:center">&nbsp;</div>'}
+            </div>
+            <div class="totals-box">
+              <div class="row"><span>รวม / Subtotal</span><span>${numFmt(calc.subtotal || 0)}</span></div>
+              ${(calc.discount || 0) > 0 ? `<div class="row"><span>ส่วนลด / Discount</span><span>-${numFmt(calc.discount)}</span></div>` : ''}
+              ${t.showVat ? `<div class="row"><span>${escHtml(t.vatLabel || 'VAT 7%')}</span><span>${numFmt(calc.vat || 0)}</span></div>` : ''}
+              <div class="row grand"><span>รวมทั้งสิ้น / Net Amount</span><span>${numFmt(calc.net || calc.total || 0)}</span></div>
+            </div>
+          </div>
+
+          ${t.showNotes && notesText ? `<div class="notes-box">📝 ${escHtml(notesText)}</div>` : ''}
+
+          ${(type === 'inv' || type === 'qt') && company.bankName ? `
+            <div class="bank-box">
+              <b>💳 การชำระเงิน / Payment Information</b><br>
+              ธนาคาร: ${escHtml(company.bankName)} ${company.bankBranch ? '• สาขา: ' + escHtml(company.bankBranch) : ''}<br>
+              เลขที่บัญชี: <b>${escHtml(company.bankAccount || '-')}</b> &nbsp;•&nbsp; ชื่อบัญชี: ${escHtml(company.bankAccountName || company.name || '-')}
+            </div>
+          ` : ''}
+
+          <div class="signs">${sigsHtml}</div>
+
+          ${t.footerText ? `<div class="doc-footer">${escHtml(t.footerText)}</div>` : ''}
+        ` : '';
+
+        // Continuation pages: just show "continued" marker, no party/meta
+        // (User spec: "หัวกระดาษซ้ำ" = repeat header — meaning company header. Party/meta only on first page.)
+        const pageInner = `
+          ${t.watermark ? `<div class="watermark">${escHtml(t.watermark)}</div>` : ''}
+          ${companyHeaderHtml}
+          ${p.isFirst ? partyMetaHtml : `<div class="cont-bar">— เอกสารเลขที่ ${escHtml(doc.id || '-')} (ต่อหน้า ${p.pageNum}) —</div>`}
+          ${tableHtml}
+          ${totalsHtml}
+          <div class="page-footer">
+            <div class="page-footer-sys">${escHtml(company.name || 'KCB SLING')} • ระบบ KCB ERP V5.0 • พิมพ์เมื่อ ${new Date().toLocaleString('th-TH')}</div>
+            <div class="page-footer-num">หน้า ${p.pageNum} / ${p.totalPages}</div>
+          </div>`;
+
+        return `<div class="page">${pageInner}</div>`;
+      }).join('');
+
       // Compose HTML for whole document
       return `<!DOCTYPE html><html lang="th"><head>
 <meta charset="UTF-8">
@@ -3255,96 +3476,131 @@ function filterPOs() {
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&family=Prompt:wght@400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Mitr:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'${t.fontFamily}','Sarabun',sans-serif;font-size:${t.fontSize}pt;color:${t.secondaryColor};background:#e5e7eb;padding:20px 0;line-height:1.45}
+  body{font-family:'${t.fontFamily}','Sarabun',sans-serif;font-size:${t.fontSize}pt;color:${t.secondaryColor};background:#e5e7eb;padding:20px 0;line-height:1.4}
   .toolbar{max-width:210mm;margin:0 auto 14px;display:flex;gap:8px;justify-content:flex-end;padding:0 10px}
   .toolbar button{background:${t.primaryColor};color:#fff;border:none;padding:10px 20px;border-radius:7px;font-family:inherit;font-weight:600;cursor:pointer;font-size:11pt;display:inline-flex;align-items:center;gap:6px;box-shadow:0 4px 12px rgba(0,0,0,0.15)}
   .toolbar button.alt{background:#6B7280}
   .toolbar button:hover{filter:brightness(1.08)}
-  .page{width:210mm;min-height:297mm;background:#fff;margin:0 auto 18px;padding:14mm;box-shadow:0 4px 20px rgba(0,0,0,.15);position:relative;overflow:hidden}
+
+  /* === A4-PERFECT PAGE === */
+  /* A4 = 210mm x 297mm. Use STRICT height so on-screen preview matches print exactly. */
+  .page{
+    width:210mm;
+    height:297mm;
+    background:#fff;
+    margin:0 auto 14px;
+    padding:12mm 12mm 10mm;
+    box-shadow:0 4px 20px rgba(0,0,0,.15);
+    position:relative;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+  }
 
   /* Watermark */
-  .watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-28deg);font-size:110pt;font-weight:900;color:${t.primaryColor}14;pointer-events:none;z-index:0;letter-spacing:10px;white-space:nowrap;font-family:'Prompt',sans-serif}
+  .watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-28deg);font-size:100pt;font-weight:900;color:${t.primaryColor}14;pointer-events:none;z-index:0;letter-spacing:10px;white-space:nowrap;font-family:'Prompt',sans-serif}
 
   /* Document body sits above watermark */
   .page > :not(.watermark){position:relative;z-index:1}
 
-  /* ========== HEADER ========== */
-  .head{display:flex;gap:16px;align-items:flex-start;padding-bottom:14px;margin-bottom:16px}
-  .head-modern{border-bottom:3px solid ${t.primaryColor}}
-  .head-classic{border-bottom:4px double ${t.primaryColor};padding-bottom:18px}
+  /* ========== HEADER (smaller per user request) ========== */
+  .head{display:flex;gap:14px;align-items:center;padding-bottom:8px;margin-bottom:10px}
+  .head-modern{border-bottom:2.5px solid ${t.primaryColor}}
+  .head-classic{border-bottom:3px double ${t.primaryColor};padding-bottom:12px}
   .head-minimal{border-bottom:1px solid ${t.primaryColor}50}
-  .head-ornate{border-bottom:none;background:linear-gradient(180deg,${t.accentColor},transparent);padding:14px 16px;border-radius:10px;border:2px solid ${t.primaryColor}40}
+  .head-ornate{border-bottom:none;background:linear-gradient(180deg,${t.accentColor},transparent);padding:10px 12px;border-radius:8px;border:1.5px solid ${t.primaryColor}40}
   .head.logo-pos-center{flex-direction:column;align-items:center;text-align:center}
   .head.logo-pos-right{flex-direction:row-reverse}
-  .head .logo-img{width:78px;height:78px;object-fit:contain;flex-shrink:0}
+  /* LOGO bigger per user request — 78px → 112px */
+  .head .logo-img{width:112px;height:112px;object-fit:contain;flex-shrink:0}
   .head .co{flex:1;min-width:0}
-  .head .co-name{font-size:15pt;font-weight:700;color:${t.primaryColor};line-height:1.25;font-family:'Prompt','${t.fontFamily}',sans-serif}
-  .head .co-name-en{font-size:9.5pt;color:${t.secondaryColor};opacity:0.7;margin-top:2px;font-style:italic}
-  .head .co-line{font-size:9pt;color:${t.secondaryColor};opacity:0.85;margin-top:3px;line-height:1.55}
-  .head .title-block{text-align:right;flex-shrink:0;min-width:200px}
-  .head.logo-pos-center .title-block{text-align:center;margin-top:8px}
-  .head .doc-title{font-size:20pt;font-weight:800;color:${t.primaryColor};font-family:'Prompt','${t.fontFamily}',sans-serif;letter-spacing:0.4px;line-height:1.1}
-  .head .doc-title-en{font-size:11pt;color:${t.secondaryColor};opacity:0.75;font-weight:600;margin-top:3px;letter-spacing:1.5px}
+  .head .co-name{font-size:13pt;font-weight:700;color:${t.primaryColor};line-height:1.2;font-family:'Prompt','${t.fontFamily}',sans-serif}
+  .head .co-name-en{font-size:8.5pt;color:${t.secondaryColor};opacity:0.7;margin-top:1px;font-style:italic}
+  .head .co-line{font-size:8pt;color:${t.secondaryColor};opacity:0.85;margin-top:2px;line-height:1.4}
+  .head .title-block{text-align:right;flex-shrink:0;min-width:170px}
+  .head.logo-pos-center .title-block{text-align:center;margin-top:6px}
+  /* DOC TITLE smaller per user request — 20pt → 16pt */
+  .head .doc-title{font-size:16pt;font-weight:800;color:${t.primaryColor};font-family:'Prompt','${t.fontFamily}',sans-serif;letter-spacing:0.3px;line-height:1.1}
+  .head .doc-title-en{font-size:9pt;color:${t.secondaryColor};opacity:0.75;font-weight:600;margin-top:2px;letter-spacing:1.2px}
 
   /* ========== PARTY + META ========== */
-  .top-grid{display:grid;grid-template-columns:1.2fr 1fr;gap:14px;margin-bottom:14px}
-  .party-card{padding:12px 14px;background:${t.accentColor};border-left:3px solid ${t.primaryColor};border-radius:6px}
-  .party-card .label{font-size:8.5pt;color:${t.secondaryColor};opacity:0.65;text-transform:uppercase;letter-spacing:0.8px;font-weight:600;margin-bottom:4px}
-  .party-card .name{font-size:12pt;font-weight:700;color:${t.secondaryColor};line-height:1.3}
-  .party-card .name-en{font-size:9.5pt;color:${t.secondaryColor};opacity:0.7;margin-top:1px;font-style:italic}
-  .party-card .line{font-size:9.5pt;color:${t.secondaryColor};opacity:0.9;line-height:1.6;margin-top:4px}
-  .meta-card{padding:12px 14px;background:#FAFAFA;border:1px solid #E5E7EB;border-radius:6px}
-  .meta-row{display:grid;grid-template-columns:120px 1fr;gap:8px;padding:3px 0;font-size:9.5pt;line-height:1.5}
+  .top-grid{display:grid;grid-template-columns:1.2fr 1fr;gap:10px;margin-bottom:9px}
+  .party-card{padding:9px 11px;background:${t.accentColor};border-left:3px solid ${t.primaryColor};border-radius:5px}
+  .party-card .label{font-size:7.5pt;color:${t.secondaryColor};opacity:0.65;text-transform:uppercase;letter-spacing:0.7px;font-weight:600;margin-bottom:3px}
+  .party-card .name{font-size:10.5pt;font-weight:700;color:${t.secondaryColor};line-height:1.25}
+  .party-card .name-en{font-size:8.5pt;color:${t.secondaryColor};opacity:0.7;margin-top:1px;font-style:italic}
+  .party-card .line{font-size:8.5pt;color:${t.secondaryColor};opacity:0.9;line-height:1.5;margin-top:3px}
+  .meta-card{padding:9px 11px;background:#FAFAFA;border:1px solid #E5E7EB;border-radius:5px}
+  .meta-row{display:grid;grid-template-columns:115px 1fr;gap:6px;padding:2px 0;font-size:8.5pt;line-height:1.4}
   .meta-row:not(:last-child){border-bottom:1px dashed #E5E7EB}
   .meta-k{color:${t.secondaryColor};opacity:0.7;font-weight:500}
   .meta-v{color:${t.secondaryColor};font-weight:600}
 
+  /* Continuation bar (pages 2+) */
+  .cont-bar{font-size:8.5pt;text-align:center;color:${t.primaryColor};font-weight:600;background:${t.accentColor};border:1px dashed ${t.primaryColor}50;border-radius:5px;padding:6px;margin-bottom:8px}
+
   /* ========== ITEMS TABLE ========== */
-  table.items{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:${(t.fontSize - 0.5)}pt}
-  table.items thead th{background:${t.primaryColor};color:#fff;padding:8px 9px;font-weight:600;border:1px solid ${t.primaryColor};text-align:left;line-height:1.25}
+  table.items{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:${Math.max(7, t.fontSize - 1)}pt}
+  table.items thead th{background:${t.primaryColor};color:#fff;padding:6px 8px;font-weight:600;border:1px solid ${t.primaryColor};text-align:left;line-height:1.2}
   table.items thead th.c{text-align:center}
   table.items thead th.r{text-align:right}
-  table.items thead th .th-en{font-size:8pt;opacity:0.85;font-weight:400;margin-top:1px}
-  table.items tbody td{padding:7px 9px;border:1px solid #E5E7EB;vertical-align:top;line-height:1.4}
+  table.items thead th .th-en{font-size:7pt;opacity:0.85;font-weight:400;margin-top:1px}
+  table.items tbody td{padding:5px 8px;border:1px solid #E5E7EB;vertical-align:top;line-height:1.35}
   table.items tbody td.c{text-align:center}
   table.items tbody td.l{text-align:left}
   table.items tbody td.r{text-align:right;font-variant-numeric:tabular-nums}
-  table.items tbody tr.empty td{height:24px;color:transparent}
-  table.items .sub{font-size:8.5pt;color:${t.secondaryColor};opacity:0.6;font-style:italic;margin-top:2px}
+  table.items tbody tr.empty td{height:20px;color:transparent}
+  table.items .sub{font-size:7.5pt;color:${t.secondaryColor};opacity:0.6;font-style:italic;margin-top:1px}
 
   /* ========== TOTALS ========== */
-  .totals-grid{display:grid;grid-template-columns:1fr 320px;gap:14px;margin-bottom:14px}
-  .baht-box{padding:14px 16px;background:${t.accentColor};border:1.5px solid ${t.primaryColor}60;border-radius:8px;display:flex;flex-direction:column;justify-content:center}
-  .baht-box .lbl{font-size:8.5pt;color:${t.secondaryColor};opacity:0.7;text-transform:uppercase;letter-spacing:0.8px;font-weight:600;margin-bottom:5px}
-  .baht-box .val{font-size:11.5pt;font-weight:700;color:${t.primaryColor};line-height:1.5}
-  .totals-box{font-size:10pt}
-  .totals-box .row{display:flex;justify-content:space-between;padding:7px 14px;border:1px solid #E5E7EB;border-bottom:none;align-items:center}
+  .totals-grid{display:grid;grid-template-columns:1fr 290px;gap:10px;margin-bottom:10px}
+  .baht-box{padding:10px 12px;background:${t.accentColor};border:1.5px solid ${t.primaryColor}60;border-radius:6px;display:flex;flex-direction:column;justify-content:center}
+  .baht-box .lbl{font-size:7.5pt;color:${t.secondaryColor};opacity:0.7;text-transform:uppercase;letter-spacing:0.7px;font-weight:600;margin-bottom:4px}
+  .baht-box .val{font-size:10pt;font-weight:700;color:${t.primaryColor};line-height:1.4}
+  .totals-box{font-size:9pt}
+  .totals-box .row{display:flex;justify-content:space-between;padding:5px 12px;border:1px solid #E5E7EB;border-bottom:none;align-items:center}
   .totals-box .row span:last-child{font-variant-numeric:tabular-nums;font-weight:600}
   .totals-box .row:last-child{border-bottom:1px solid #E5E7EB}
-  .totals-box .row.grand{background:${t.primaryColor};color:#fff;font-weight:700;font-size:11.5pt;border-color:${t.primaryColor}}
+  .totals-box .row.grand{background:${t.primaryColor};color:#fff;font-weight:700;font-size:10pt;border-color:${t.primaryColor}}
 
   /* ========== NOTES + BANK ========== */
-  .notes-box{padding:11px 14px;background:#FFFBEB;border:1px solid #FCD34D;border-radius:6px;font-size:9.5pt;color:#92400E;margin-bottom:14px;line-height:1.6;white-space:pre-wrap}
-  .bank-box{padding:11px 14px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;font-size:9.5pt;color:#1E3A8A;margin-bottom:14px;line-height:1.6}
+  .notes-box{padding:8px 11px;background:#FFFBEB;border:1px solid #FCD34D;border-radius:5px;font-size:8.5pt;color:#92400E;margin-bottom:9px;line-height:1.5;white-space:pre-wrap}
+  .bank-box{padding:8px 11px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:5px;font-size:8.5pt;color:#1E3A8A;margin-bottom:9px;line-height:1.5}
   .bank-box b{color:#1E40AF}
 
   /* ========== SIGNATURES ========== */
-  .signs{display:grid;grid-template-columns:repeat(${sigCount}, 1fr);gap:14px;margin-top:30px}
-  .sig{text-align:center;padding-top:40px}
-  .sig-line{border-top:1px dashed ${t.secondaryColor}80;width:85%;margin:0 auto 8px}
-  .sig-label{font-size:10pt;color:${t.secondaryColor};font-weight:700}
-  .sig-label-en{font-size:8.5pt;color:${t.secondaryColor};opacity:0.65;font-weight:500;margin-top:1px}
-  .sig-date{font-size:8.5pt;color:${t.secondaryColor};opacity:0.6;margin-top:8px}
+  .signs{display:grid;grid-template-columns:repeat(${sigCount}, 1fr);gap:12px;margin-top:18px}
+  .sig{text-align:center;padding-top:30px}
+  .sig-line{border-top:1px dashed ${t.secondaryColor}80;width:85%;margin:0 auto 6px}
+  .sig-label{font-size:9pt;color:${t.secondaryColor};font-weight:700}
+  .sig-label-en{font-size:7.5pt;color:${t.secondaryColor};opacity:0.65;font-weight:500;margin-top:1px}
+  .sig-date{font-size:7.5pt;color:${t.secondaryColor};opacity:0.6;margin-top:6px}
 
   /* ========== FOOTER ========== */
-  .doc-footer{font-size:9pt;color:${t.primaryColor};text-align:center;margin-top:20px;padding-top:10px;border-top:1px solid ${t.primaryColor}30;font-weight:600}
-  .doc-footer-system{font-size:7.5pt;color:#9CA3AF;text-align:center;margin-top:5px}
+  .doc-footer{font-size:8pt;color:${t.primaryColor};text-align:center;margin-top:12px;padding-top:7px;border-top:1px solid ${t.primaryColor}30;font-weight:600}
 
-  /* ========== PRINT ========== */
+  /* Per-page footer (bottom of each page) — also auto-pushes to bottom because .page is flex-column */
+  .page-footer{margin-top:auto;padding-top:6px;display:flex;justify-content:space-between;align-items:center;font-size:7pt;color:#9CA3AF;border-top:1px solid #E5E7EB}
+  .page-footer-sys{flex:1;text-align:center}
+  .page-footer-num{flex-shrink:0;font-weight:600}
+
+  /* ========== PRINT (exact A4 fit, no extra blanks) ========== */
   @media print {
-    body{background:#fff;padding:0}
+    html, body { width: 210mm; height: 297mm; }
+    body{background:#fff;padding:0;margin:0}
     .toolbar{display:none}
-    .page{box-shadow:none;width:auto;min-height:auto;margin:0;padding:14mm}
+    .page{
+      box-shadow:none;
+      width:210mm;
+      height:297mm;
+      margin:0;
+      padding:12mm 12mm 10mm;
+      page-break-after:always;
+      page-break-inside:avoid;
+      break-inside:avoid;
+      overflow:hidden;
+    }
+    .page:last-child{page-break-after:auto}
     @page{size:A4;margin:0}
   }
 </style>
@@ -3354,96 +3610,10 @@ function filterPOs() {
   <button onclick="window.print()">🖨 พิมพ์ / Print</button>
   <button class="alt" onclick="window.close()">ปิด / Close</button>
 </div>
-<div class="page">
-  ${t.watermark ? `<div class="watermark">${escHtml(t.watermark)}</div>` : ''}
-
-  <!-- HEADER -->
-  <div class="${headerCls} ${logoPosCls}">
-    ${t.showLogo ? `<img src="${logoSrc}" class="logo-img" alt="logo">` : ''}
-    <div class="co">
-      <div class="co-name">${escHtml(company.name || 'บริษัท เคซีบี สลิง จำกัด')}</div>
-      ${company.nameEn ? `<div class="co-name-en">${escHtml(company.nameEn)}</div>` : ''}
-      ${t.showCompanyAddress && company.address ? `<div class="co-line">${escHtml(company.address)}</div>` : ''}
-      ${t.showCompanyContact ? `<div class="co-line">${[
-        company.tel ? 'โทร / Tel: ' + escHtml(company.tel) : '',
-        company.fax ? 'แฟกซ์: ' + escHtml(company.fax) : '',
-        company.email ? 'อีเมล: ' + escHtml(company.email) : '',
-        company.website ? 'เว็บ: ' + escHtml(company.website) : ''
-      ].filter(Boolean).join(' &nbsp;•&nbsp; ')}</div>` : ''}
-      ${t.showCompanyTaxId && company.taxId ? `<div class="co-line">เลขประจำตัวผู้เสียภาษี: ${escHtml(company.taxId)}${company.branch ? ' &nbsp;•&nbsp; สาขา: ' + escHtml(company.branch) : ''}</div>` : ''}
-    </div>
-    <div class="title-block">
-      <div class="doc-title">${escHtml(t.titleTh)}</div>
-      <div class="doc-title-en">${escHtml(t.titleEn)}</div>
-    </div>
-  </div>
-
-  <!-- PARTY + META -->
-  <div class="top-grid">
-    <div class="party-card">
-      <div class="label">${escHtml(t.partyLabel)} / ${escHtml(t.partyLabelEn)}</div>
-      <div class="name">${escHtml(party.name || '-')}</div>
-      ${party.nameEn ? `<div class="name-en">${escHtml(party.nameEn)}</div>` : ''}
-      ${party.address ? `<div class="line">${escHtml(party.address)}</div>` : ''}
-      <div class="line">
-        ${party.tel ? 'โทร / Tel: ' + escHtml(party.tel) : ''}
-        ${party.taxId ? (party.tel ? ' &nbsp;•&nbsp; ' : '') + 'เลขภาษี: ' + escHtml(party.taxId) : ''}
-      </div>
-      ${party.branch && party.branch !== '-' ? `<div class="line">สาขา: ${escHtml(party.branch)}</div>` : ''}
-    </div>
-    <div class="meta-card">
-      ${metaHtml}
-    </div>
-  </div>
-
-  <!-- ITEMS TABLE -->
-  <table class="items">
-    <thead><tr>${thHtml}</tr></thead>
-    <tbody>
-      ${rowsHtml || `<tr><td colspan="${colDefs.length}" style="text-align:center;color:#9CA3AF;padding:24px">— ไม่มีรายการ —</td></tr>`}
-      ${emptyHtml}
-    </tbody>
-  </table>
-
-  <!-- TOTALS -->
-  <div class="totals-grid">
-    <div class="baht-box">
-      ${t.showBahtText ? `
-        <div class="lbl">จำนวนเงิน (ตัวอักษร) / Amount in Words</div>
-        <div class="val">( ${bahtText(calc.net || calc.total || 0)} )</div>
-      ` : '<div style="opacity:0.4;font-size:9pt;text-align:center">&nbsp;</div>'}
-    </div>
-    <div class="totals-box">
-      <div class="row"><span>รวม / Subtotal</span><span>${numFmt(calc.subtotal || 0)}</span></div>
-      ${(calc.discount || 0) > 0 ? `<div class="row"><span>ส่วนลด / Discount</span><span>-${numFmt(calc.discount)}</span></div>` : ''}
-      ${t.showVat ? `<div class="row"><span>${escHtml(t.vatLabel || 'VAT 7%')}</span><span>${numFmt(calc.vat || 0)}</span></div>` : ''}
-      <div class="row grand"><span>รวมทั้งสิ้น / Net Amount</span><span>${numFmt(calc.net || calc.total || 0)}</span></div>
-    </div>
-  </div>
-
-  <!-- NOTES -->
-  ${t.showNotes && notesText ? `<div class="notes-box">📝 ${escHtml(notesText)}</div>` : ''}
-
-  <!-- BANK INFO (for INV/QT) -->
-  ${(type === 'inv' || type === 'qt') && company.bankName ? `
-    <div class="bank-box">
-      <b>💳 การชำระเงิน / Payment Information</b><br>
-      ธนาคาร: ${escHtml(company.bankName)} ${company.bankBranch ? '• สาขา: ' + escHtml(company.bankBranch) : ''}<br>
-      เลขที่บัญชี: <b>${escHtml(company.bankAccount || '-')}</b> &nbsp;•&nbsp; ชื่อบัญชี: ${escHtml(company.bankAccountName || company.name || '-')}
-    </div>
-  ` : ''}
-
-  <!-- SIGNATURES -->
-  <div class="signs">${sigsHtml}</div>
-
-  <!-- FOOTER -->
-  ${t.footerText ? `<div class="doc-footer">${escHtml(t.footerText)}</div>` : ''}
-  <div class="doc-footer-system">${escHtml(company.name || 'KCB SLING')} • ระบบ KCB ERP V5.0 • พิมพ์เมื่อ ${new Date().toLocaleString('th-TH')}</div>
-</div>
-
+${pagesHtml}
 <script>
   // Auto-focus print window after small delay
-  window.onload = function(){ setTimeout(()=>window.focus(), 100); };
+  window.onload = function(){ setTimeout(function(){ window.focus(); }, 100); };
 <\/script>
 </body></html>`;
     }
@@ -3799,66 +3969,68 @@ function filterPOs() {
   .toolbar button{background:${t.primaryColor};color:#fff;border:none;padding:10px 20px;border-radius:7px;font-family:inherit;font-weight:600;cursor:pointer;font-size:11pt;box-shadow:0 4px 12px rgba(0,0,0,0.15)}
   .toolbar button.alt{background:#6B7280}
   .toolbar button:hover{filter:brightness(1.08)}
-  .page{width:210mm;min-height:297mm;background:#fff;margin:0 auto 18px;padding:18mm;box-shadow:0 4px 20px rgba(0,0,0,.15);position:relative;overflow:hidden;border:6px double ${t.primaryColor}}
-  .watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-28deg);font-size:120pt;font-weight:900;color:${t.primaryColor}13;pointer-events:none;z-index:0;letter-spacing:12px;white-space:nowrap;font-family:'Prompt',sans-serif}
+  .page{width:210mm;height:297mm;background:#fff;margin:0 auto 14px;padding:14mm;box-shadow:0 4px 20px rgba(0,0,0,.15);position:relative;overflow:hidden;border:5px double ${t.primaryColor};display:flex;flex-direction:column}
+  .watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-28deg);font-size:110pt;font-weight:900;color:${t.primaryColor}13;pointer-events:none;z-index:0;letter-spacing:12px;white-space:nowrap;font-family:'Prompt',sans-serif}
   .page > :not(.watermark){position:relative;z-index:1}
 
-  /* ===== HEADER ===== */
-  .cert-head{text-align:center;padding-bottom:14px;margin-bottom:18px;border-bottom:2px solid ${t.primaryColor}}
-  .cert-head.head-ornate{border-bottom:none;background:linear-gradient(180deg,${t.accentColor},transparent);padding:18px;border-radius:12px;margin-bottom:24px}
-  .cert-head .logo-img{width:90px;height:90px;object-fit:contain;margin-bottom:10px}
-  .cert-head .co-name{font-family:'Prompt','${t.fontFamily}',sans-serif;color:${t.primaryColor};font-size:18pt;font-weight:700;line-height:1.2}
-  .cert-head .co-name-en{font-size:10pt;color:${t.secondaryColor};opacity:0.7;margin-top:3px;font-style:italic}
-  .cert-head .co-line{font-size:9pt;color:${t.secondaryColor};opacity:0.8;margin-top:5px;line-height:1.5}
+  /* ===== HEADER (smaller per user request) ===== */
+  .cert-head{text-align:center;padding-bottom:10px;margin-bottom:14px;border-bottom:2px solid ${t.primaryColor}}
+  .cert-head.head-ornate{border-bottom:none;background:linear-gradient(180deg,${t.accentColor},transparent);padding:14px;border-radius:10px;margin-bottom:18px}
+  /* LOGO bigger per user request — 90px → 130px */
+  .cert-head .logo-img{width:130px;height:130px;object-fit:contain;margin-bottom:8px}
+  .cert-head .co-name{font-family:'Prompt','${t.fontFamily}',sans-serif;color:${t.primaryColor};font-size:15pt;font-weight:700;line-height:1.2}
+  .cert-head .co-name-en{font-size:9pt;color:${t.secondaryColor};opacity:0.7;margin-top:2px;font-style:italic}
+  .cert-head .co-line{font-size:8pt;color:${t.secondaryColor};opacity:0.8;margin-top:4px;line-height:1.4}
 
-  /* ===== TITLE ===== */
-  .cert-title-block{text-align:center;margin:24px 0 28px}
-  .cert-title{font-family:'Prompt','${t.fontFamily}',sans-serif;font-size:32pt;color:${t.primaryColor};font-weight:800;letter-spacing:3px;line-height:1.1}
-  .cert-title-en{font-size:14pt;color:${t.primaryColor};opacity:0.85;font-weight:700;letter-spacing:8px;margin-top:6px}
-  .cert-no{text-align:center;font-size:12pt;font-weight:600;margin-bottom:24px;color:${t.secondaryColor}}
+  /* ===== TITLE (smaller per user request — 32pt → 24pt) ===== */
+  .cert-title-block{text-align:center;margin:14px 0 18px}
+  .cert-title{font-family:'Prompt','${t.fontFamily}',sans-serif;font-size:24pt;color:${t.primaryColor};font-weight:800;letter-spacing:2.5px;line-height:1.1}
+  .cert-title-en{font-size:11pt;color:${t.primaryColor};opacity:0.85;font-weight:700;letter-spacing:6px;margin-top:5px}
+  .cert-no{text-align:center;font-size:10pt;font-weight:600;margin-bottom:16px;color:${t.secondaryColor}}
   .cert-no span{color:${t.primaryColor};font-weight:700}
 
   /* ===== STATEMENT ===== */
-  .cert-statement{text-align:center;font-size:11pt;line-height:1.8;margin-bottom:22px;padding:0 24px;color:${t.secondaryColor};opacity:0.95}
-  .cert-statement .who{font-weight:700;color:${t.primaryColor};font-size:13pt}
+  .cert-statement{text-align:center;font-size:9.5pt;line-height:1.7;margin-bottom:16px;padding:0 18px;color:${t.secondaryColor};opacity:0.95}
+  .cert-statement .who{font-weight:700;color:${t.primaryColor};font-size:11pt}
 
   /* ===== DATA GRID ===== */
-  .data-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1.5px solid ${t.primaryColor}40;border-radius:8px;overflow:hidden;margin-bottom:22px}
-  .data-grid .cell{padding:12px 16px;border-bottom:1px solid #E5E7EB;border-right:1px solid #E5E7EB}
+  .data-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1.5px solid ${t.primaryColor}40;border-radius:7px;overflow:hidden;margin-bottom:16px}
+  .data-grid .cell{padding:9px 13px;border-bottom:1px solid #E5E7EB;border-right:1px solid #E5E7EB}
   .data-grid .cell:nth-child(even){border-right:none}
   .data-grid .cell:nth-last-child(-n+2){border-bottom:none}
-  .data-grid .lbl{font-size:9pt;color:${t.primaryColor};font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px}
-  .data-grid .val{font-size:12pt;font-weight:600;color:${t.secondaryColor}}
+  .data-grid .lbl{font-size:8pt;color:${t.primaryColor};font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px}
+  .data-grid .val{font-size:10pt;font-weight:600;color:${t.secondaryColor}}
 
-  /* ===== RESULT ===== */
-  .result-box{background:${passColor};color:#fff;text-align:center;padding:22px;border-radius:10px;margin:24px 0;box-shadow:0 6px 20px ${passColor}50}
-  .result-box .lbl{font-size:11pt;font-weight:600;opacity:0.92;letter-spacing:1.2px;text-transform:uppercase}
-  .result-box .val{font-family:'Prompt',sans-serif;font-size:28pt;font-weight:800;margin-top:6px;letter-spacing:4px}
+  /* ===== RESULT (smaller — 28pt → 22pt) ===== */
+  .result-box{background:${passColor};color:#fff;text-align:center;padding:16px;border-radius:8px;margin:16px 0;box-shadow:0 5px 16px ${passColor}50}
+  .result-box .lbl{font-size:9.5pt;font-weight:600;opacity:0.92;letter-spacing:1.1px;text-transform:uppercase}
+  .result-box .val{font-family:'Prompt',sans-serif;font-size:22pt;font-weight:800;margin-top:5px;letter-spacing:3px}
 
   /* ===== NOTES ===== */
-  .notes-box{border:1px solid #E5E7EB;border-radius:8px;padding:14px 18px;margin-bottom:22px;background:#FAFAFA;line-height:1.6}
-  .notes-box .lbl{font-size:9pt;color:${t.primaryColor};font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px}
-  .notes-box .val{font-size:10pt;color:${t.secondaryColor};white-space:pre-wrap}
+  .notes-box{border:1px solid #E5E7EB;border-radius:7px;padding:11px 15px;margin-bottom:14px;background:#FAFAFA;line-height:1.5}
+  .notes-box .lbl{font-size:8pt;color:${t.primaryColor};font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px}
+  .notes-box .val{font-size:9pt;color:${t.secondaryColor};white-space:pre-wrap}
 
   /* ===== SIGNATURES ===== */
-  .signs{display:grid;grid-template-columns:repeat(${sigCount}, 1fr);gap:30px;margin-top:36px;padding:0 30px}
-  .sig{text-align:center;padding-top:24px}
-  .sig-line{border-top:1.5px solid ${t.secondaryColor}99;width:85%;margin:0 auto 8px}
-  .sig-label{font-size:11pt;color:${t.secondaryColor};font-weight:700;font-family:'Prompt','${t.fontFamily}',sans-serif}
-  .sig-label-en{font-size:9pt;color:${t.secondaryColor};opacity:0.65;font-weight:500;margin-top:1px}
-  .sig-name{font-size:9.5pt;color:${t.secondaryColor};opacity:0.85;margin-top:8px}
+  .signs{display:grid;grid-template-columns:repeat(${sigCount}, 1fr);gap:24px;margin-top:auto;padding:0 24px 6px}
+  .sig{text-align:center;padding-top:18px}
+  .sig-line{border-top:1.5px solid ${t.secondaryColor}99;width:85%;margin:0 auto 6px}
+  .sig-label{font-size:9.5pt;color:${t.secondaryColor};font-weight:700;font-family:'Prompt','${t.fontFamily}',sans-serif}
+  .sig-label-en{font-size:8pt;color:${t.secondaryColor};opacity:0.65;font-weight:500;margin-top:1px}
+  .sig-name{font-size:8.5pt;color:${t.secondaryColor};opacity:0.85;margin-top:6px}
 
   /* ===== SEAL ===== */
-  .seal{position:absolute;bottom:60mm;right:24mm;width:100px;height:100px;border:3px solid ${t.primaryColor};border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-size:8pt;color:${t.primaryColor};font-weight:700;opacity:0.35;transform:rotate(-12deg);line-height:1.3;font-family:'Prompt',sans-serif;letter-spacing:1.5px;z-index:2}
+  .seal{position:absolute;bottom:55mm;right:22mm;width:90px;height:90px;border:3px solid ${t.primaryColor};border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-size:7.5pt;color:${t.primaryColor};font-weight:700;opacity:0.35;transform:rotate(-12deg);line-height:1.2;font-family:'Prompt',sans-serif;letter-spacing:1.3px;z-index:2}
 
   /* ===== FOOTER ===== */
-  .doc-footer{font-size:10pt;color:${t.primaryColor};text-align:center;margin-top:24px;padding-top:12px;border-top:1px solid ${t.primaryColor}30;font-weight:600;font-family:'Prompt',sans-serif;letter-spacing:1px}
-  .doc-footer-system{font-size:8pt;color:#9CA3AF;text-align:center;margin-top:6px}
+  .doc-footer{font-size:9pt;color:${t.primaryColor};text-align:center;margin-top:14px;padding-top:9px;border-top:1px solid ${t.primaryColor}30;font-weight:600;font-family:'Prompt',sans-serif;letter-spacing:1px}
+  .doc-footer-system{font-size:7pt;color:#9CA3AF;text-align:center;margin-top:4px}
 
   @media print {
-    body{background:#fff;padding:0}
+    html, body { width: 210mm; height: 297mm; }
+    body{background:#fff;padding:0;margin:0}
     .toolbar{display:none}
-    .page{box-shadow:none;width:auto;min-height:auto;margin:0;border:6px double ${t.primaryColor}}
+    .page{box-shadow:none;width:210mm;height:297mm;margin:0;padding:14mm;border:5px double ${t.primaryColor};page-break-after:auto;overflow:hidden}
     @page{size:A4;margin:0}
   }
 </style>
@@ -4292,6 +4464,9 @@ function filterPOs() {
     let stockViewMode = 'table';
     let stockFilterCategory = '';
     let stockFilterLow = false;
+    // Active category tab (Google-Sheets-style bottom tabs).
+    // '' = ทั้งหมด, '__none__' = ยังไม่ได้จัดหมวด, otherwise = exact category name
+    let activeCategoryTab = '';
 
     function renderStock() {
       const products = DB.get('products', []);
@@ -4299,8 +4474,63 @@ function filterPOs() {
       const totalUnits = products.reduce((s, p) => s + (parseInt(p.stock) || 0), 0);
       const totalValue = products.reduce((s, p) => s + (parseInt(p.stock) || 0) * (parseFloat(p.cost) || 0), 0);
 
+      // ---- Compute categories present in products ----
+      const userCategories = DB.get('categories', []);
+      const inUse = new Set();
+      let uncategorizedCount = 0;
+      products.forEach(p => {
+        const c = (p.category || '').trim();
+        if (c) inUse.add(c);
+        else uncategorizedCount++;
+      });
+      // Merge: user-defined categories first (in their order), then any new ones found in data
+      const orderedCats = [];
+      userCategories.forEach(uc => {
+        if (uc && uc.name) orderedCats.push(uc.name);
+      });
+      [...inUse].forEach(c => {
+        if (!orderedCats.includes(c)) orderedCats.push(c);
+      });
+
+      // Count per category for the badge
+      const countFor = (catName) => products.filter(p => (p.category || '').trim() === catName).length;
+
+      // ---- Filter products by active tab ----
+      const filteredProducts = products.filter(p => {
+        if (activeCategoryTab === '') return true;
+        if (activeCategoryTab === '__none__') return !((p.category || '').trim());
+        return (p.category || '').trim() === activeCategoryTab;
+      });
+
+      // ---- Build the tab bar (Google Sheets style, fixed to bottom of viewport) ----
+      const tabsHtml = `
+        <div class="cat-tab-bar" id="catTabBar">
+          <div class="cat-tabs-scroll">
+            <button class="cat-tab ${activeCategoryTab === '' ? 'active' : ''}" onclick="setStockCategoryTab('')">
+              📋 ทั้งหมด <span class="cat-tab-badge">${products.length}</span>
+            </button>
+            ${uncategorizedCount > 0 ? `
+              <button class="cat-tab cat-tab-uncat ${activeCategoryTab === '__none__' ? 'active' : ''}" onclick="setStockCategoryTab('__none__')">
+                ⚠️ ยังไม่ได้จัดหมวด <span class="cat-tab-badge">${uncategorizedCount}</span>
+              </button>
+            ` : ''}
+            ${orderedCats.map(c => {
+              // Encode the category name to base64 so it survives any quoting safely in onclick.
+              const enc = btoa(unescape(encodeURIComponent(c)));
+              return `
+              <button class="cat-tab ${activeCategoryTab === c ? 'active' : ''}" onclick="setStockCategoryTabEnc('${enc}')">
+                📁 ${escHtml(c)} <span class="cat-tab-badge">${countFor(c)}</span>
+              </button>
+            `}).join('')}
+          </div>
+          <div class="cat-tab-actions">
+            <button class="cat-tab-add" onclick="openCatTabAddPrompt()" title="เพิ่มหมวดหมู่ใหม่">+ หมวด</button>
+            <button class="cat-tab-add" onclick="openCategoryManager()" title="จัดการหมวดหมู่">⚙</button>
+          </div>
+        </div>`;
+
       document.getElementById('mainContent').innerHTML = `
-        <div class="content-pad">
+        <div class="content-pad stock-page-pad">
           <div class="stock-toolbar">
             <div class="stat-pill">
               <span class="stat-pill-icon">📦</span>
@@ -4326,15 +4556,86 @@ function filterPOs() {
           </div>
           
           <div class="sheet-container" id="sheetContainer">
-            ${renderSheetGrid(products)}
+            ${renderSheetGrid(filteredProducts)}
           </div>
           
           <div class="sheet-help">
-            💡 <b>เคล็ดลับ:</b> คลิกเซลล์เพื่อแก้ไข • กด <kbd>Tab</kbd> หรือ <kbd>Enter</kbd> เพื่อไปเซลล์ถัดไป • <kbd>Esc</kbd> ยกเลิก • ทุกการเปลี่ยนแปลงบันทึกอัตโนมัติ
+            💡 <b>เคล็ดลับ:</b> คลิกเซลล์เพื่อแก้ไข • กด <kbd>Tab</kbd> หรือ <kbd>Enter</kbd> เพื่อไปเซลล์ถัดไป • <kbd>Esc</kbd> ยกเลิก • ทุกการเปลี่ยนแปลงบันทึกอัตโนมัติ • คลิกแถบหมวดหมู่ด้านล่างเพื่อกรอง
           </div>
         </div>
+        ${tabsHtml}
       `;
       bindSheetEvents();
+    }
+
+    // Set active category tab and re-render
+    function setStockCategoryTab(catName) {
+      activeCategoryTab = catName;
+      renderStock();
+    }
+
+    // Variant that takes a base64-encoded category name (used by tab bar to avoid quoting issues)
+    function setStockCategoryTabEnc(enc) {
+      try {
+        const name = decodeURIComponent(escape(atob(enc)));
+        setStockCategoryTab(name);
+      } catch (e) {
+        console.warn('Bad category encoding:', e);
+      }
+    }
+
+    // Quick add category prompt (from the tab bar)
+    function openCatTabAddPrompt() {
+      const html = `
+        <div class="modal modal-sm">
+          <div class="modal-header"><div class="modal-title">➕ เพิ่มหมวดหมู่ใหม่</div>
+            <button class="modal-close" onclick="closeModal()">×</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label class="form-label">ชื่อหมวดหมู่</label>
+              <input type="text" id="quickCatName" class="form-control input" placeholder="เช่น สลิงสตีล, อะไหล่, อุปกรณ์ยก" autofocus>
+            </div>
+            <div class="form-hint">หลังจากสร้างแล้ว ให้คลิกแถบหมวดนี้แล้วแก้คอลัมน์ "หมวดหมู่" ของแต่ละสินค้า เพื่อจัดเข้าหมวด</div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal()">ยกเลิก</button>
+            <button class="btn btn-primary" onclick="saveQuickCategory()">บันทึก</button>
+          </div>
+        </div>`;
+      openModal(html);
+      setTimeout(() => {
+        const inp = document.getElementById('quickCatName');
+        if (inp) {
+          inp.focus();
+          inp.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); saveQuickCategory(); }
+          });
+        }
+      }, 50);
+    }
+
+    function saveQuickCategory() {
+      const name = (document.getElementById('quickCatName')?.value || '').trim();
+      if (!name) { toast('กรุณาระบุชื่อหมวดหมู่', 'warning'); return; }
+      const cats = DB.get('categories', []);
+      if (cats.find(c => c.name === name)) { toast('หมวดหมู่นี้มีอยู่แล้ว', 'warning'); return; }
+      cats.push({ id: 'cat_' + Date.now(), name, color: '#1E40F2' });
+      DB.set('categories', cats);
+      closeModal();
+      toast(`เพิ่มหมวดหมู่ "${name}" แล้ว`, 'success');
+      activeCategoryTab = name;
+      renderStock();
+    }
+
+    function openCategoryManager() {
+      if (typeof openCategoryModal === 'function') {
+        openCategoryModal();
+      } else if (typeof renderCategoriesManager === 'function') {
+        renderCategoriesManager();
+      } else {
+        toast('ฟังก์ชันจัดการหมวดหมู่ไม่พร้อมใช้งาน', 'warning');
+      }
     }
 
 
@@ -4664,7 +4965,7 @@ function filterPOs() {
         <div class="modal-content" style="max-width:560px">
           <div class="modal-header">
             <h2>จัดการหมวดหมู่</h2>
-            <button class="modal-close" onclick="closeModal()">×</button>
+            <button class="modal-close" onclick="closeCategoryManager()">×</button>
           </div>
           <div class="modal-body">
             <div class="form-row">
@@ -4681,11 +4982,19 @@ function filterPOs() {
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-ghost" onclick="closeModal()">ปิด</button>
+            <button class="btn btn-ghost" onclick="closeCategoryManager()">ปิด</button>
           </div>
         </div>
       `;
       openModal(html);
+    }
+
+    // Close the category modal AND refresh the Stock tab bar
+    function closeCategoryManager() {
+      closeModal();
+      if (currentPage === 'stock' && typeof renderStock === 'function') {
+        renderStock();
+      }
     }
 
     function addCategory() {
@@ -4695,6 +5004,11 @@ function filterPOs() {
       if (cats.find(c => c.name === name)) { toast('หมวดหมู่นี้มีอยู่แล้ว', 'warning'); return; }
       cats.push({ id: 'C' + Date.now(), name });
       DB.set('categories', cats);
+      // Re-render the Stock page in the background so the bottom tab bar picks up the new category
+      if (currentPage === 'stock' && typeof renderStock === 'function') {
+        // Delay slightly so the modal re-open doesn't get clobbered
+        setTimeout(() => { /* renderStock will be called after closeModal in caller workflow */ }, 0);
+      }
       closeModal();
       openCategoryModal();
     }
@@ -7814,7 +8128,7 @@ function viewReviewDetail(id) {
 .stat-pill-lbl{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:0.8px;font-weight:600}
 .stat-pill-val{font-family:"JetBrains Mono",monospace;font-weight:800;font-size:16px;color:var(--text)}
 
-.sheet-container{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:auto;max-height:calc(100vh - 280px)}
+.sheet-container{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:auto;max-height:calc(100vh - 340px)}
 .sheet-grid{width:100%;border-collapse:separate;border-spacing:0;font-size:14px}
 .sheet-grid thead{position:sticky;top:0;z-index:10}
 .sheet-grid th{background:#F3F4F6;color:#374151;font-weight:700;padding:10px 12px;border-right:1px solid #D1D5DB;border-bottom:2px solid #9CA3AF;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;user-select:none}
@@ -7844,14 +8158,114 @@ function viewReviewDetail(id) {
 .del-row-btn{background:transparent;border:none;color:#9CA3AF;cursor:pointer;padding:6px;border-radius:4px;opacity:0;transition:all 0.15s}
 .sheet-grid tbody tr:hover .del-row-btn{opacity:1}
 .del-row-btn:hover{background:#FEE2E2;color:#991B1B}
+
+/* ============================================================
+   CATEGORY TAB BAR — Google-Sheets-style bottom tabs
+   ============================================================ */
+.stock-page-pad{padding-bottom:56px} /* leave room for the fixed tab bar */
+.cat-tab-bar{
+  position:fixed;
+  left:var(--sidebar-w);
+  right:0;
+  bottom:0;
+  height:46px;
+  background:linear-gradient(180deg,#FFFFFF 0%,#F3F4F6 100%);
+  border-top:1.5px solid #D1D5DB;
+  box-shadow:0 -3px 12px rgba(0,0,0,0.06);
+  display:flex;
+  align-items:stretch;
+  z-index:80;
+  user-select:none;
+}
+.cat-tabs-scroll{
+  flex:1;
+  display:flex;
+  align-items:stretch;
+  overflow-x:auto;
+  overflow-y:hidden;
+  scrollbar-width:thin;
+}
+.cat-tabs-scroll::-webkit-scrollbar{height:6px}
+.cat-tabs-scroll::-webkit-scrollbar-thumb{background:#D1D5DB;border-radius:3px}
+.cat-tab{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:0 14px;
+  background:transparent;
+  border:none;
+  border-right:1px solid #E5E7EB;
+  font-family:inherit;
+  font-size:13px;
+  font-weight:500;
+  color:var(--text2);
+  cursor:pointer;
+  white-space:nowrap;
+  transition:background 0.12s, color 0.12s;
+  position:relative;
+  outline:none;
+}
+.cat-tab:hover{background:#FFF8F2;color:var(--primary-dark)}
+.cat-tab.active{
+  background:#fff;
+  color:var(--primary-dark);
+  font-weight:700;
+  box-shadow:inset 0 3px 0 var(--primary);
+}
+.cat-tab.cat-tab-uncat{color:#92400E}
+.cat-tab.cat-tab-uncat.active{color:#92400E;box-shadow:inset 0 3px 0 #F59E0B}
+.cat-tab-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:22px;
+  height:18px;
+  padding:0 6px;
+  background:#E5E7EB;
+  color:#4B5563;
+  border-radius:99px;
+  font-size:11px;
+  font-weight:700;
+  font-family:"JetBrains Mono",monospace;
+}
+.cat-tab.active .cat-tab-badge{background:var(--primary-soft);color:var(--primary-dark)}
+.cat-tab.cat-tab-uncat .cat-tab-badge{background:#FEF3C7;color:#92400E}
+.cat-tab-actions{
+  display:flex;
+  align-items:center;
+  padding:0 8px;
+  gap:6px;
+  border-left:1px solid #E5E7EB;
+  background:#F9FAFB;
+}
+.cat-tab-add{
+  background:var(--primary-soft);
+  color:var(--primary-dark);
+  border:1px solid var(--primary-light);
+  padding:5px 12px;
+  border-radius:6px;
+  font-family:inherit;
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer;
+  transition:all 0.12s;
+}
+.cat-tab-add:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
+
+@media (max-width: 900px){
+  .cat-tab-bar{left:0}
+}
 </style>
 
 <script>
 // =============================================================================
 // SPREADSHEET EDITOR — universal grid editor used by Stock & Doc pages
 // =============================================================================
-const SHEET_COLS = [
-  { key: 'name', label: 'ชื่อสินค้า', type: 'text', width: '420px', required: true },
+// BASE columns (always shown, editable, type-aware)
+const SHEET_COLS_BASE = [
+  { key: 'code', label: 'รหัส', type: 'text', width: '110px' },
+  { key: 'name', label: 'ชื่อสินค้า', type: 'text', width: '380px', required: true },
+  { key: 'category', label: 'หมวดหมู่', type: 'text', width: '140px' },
   { key: 'brand', label: 'Brand', type: 'text', width: '110px' },
   { key: 'unit', label: 'หน่วย', type: 'text', width: '80px' },
   { key: 'stock', label: 'คงเหลือ', type: 'number', width: '110px' },
@@ -7863,33 +8277,111 @@ const SHEET_COLS = [
   { key: 'cert', label: 'Cert.', type: 'text', width: '110px' }
 ];
 
+// Convert a raw sheet-header label into a safe key matching what manualSync stores.
+function _sheetHeaderToKey(h) {
+  const s = String(h || '').trim();
+  if (!s) return '';
+  return 'col_' + s.replace(/[^\p{L}\p{N}_]+/gu, '_').toLowerCase().slice(0, 50);
+}
+
+// Build the live column list = BASE + any extra headers from the synced sheet
+// that don't already map to a known base column.
+function getSheetCols() {
+  const cols = SHEET_COLS_BASE.slice();
+  const headers = DB.get('sheetHeaders', []);
+  if (!Array.isArray(headers) || headers.length === 0) return cols;
+
+  // Reverse lookup: which base keys we already cover via the known KEYWORDS in manualSync?
+  // (name, brand, unit, stock, initialStock, price, cost, code, category, statusText, cert)
+  const baseKeyAliases = {
+    'about':'name','spec':'name','name':'name','ชื่อ':'name','สินค้า':'name','product':'name','รายการ':'name','description':'name','item name':'name',
+    'brand':'brand','ยี่ห้อ':'brand','แบรนด์':'brand',
+    'status':'statusText','สถานะ':'statusText',
+    'cert':'cert','certificate':'cert','ใบรับรอง':'cert',
+    'เต็ม':'initialStock','จำนวนเต็ม':'initialStock','full':'initialStock','initial':'initialStock',
+    'คงเหลือ':'stock','stock':'stock','qty':'stock','จำนวน':'stock','on hand':'stock','available':'stock','balance':'stock',
+    'price':'price','ราคา':'price','sale price':'price','unit price':'price','ราคาขาย':'price',
+    'cost':'cost','ทุน':'cost','ต้นทุน':'cost',
+    'unit':'unit','หน่วย':'unit',
+    'category':'category','หมวด':'category','หมวดหมู่':'category','ประเภท':'category','type':'category',
+    'code':'code','sku':'code','รหัส':'code','item code':'code','product code':'code'
+  };
+
+  // Headers we've already covered:
+  const usedBaseKeys = new Set();
+
+  headers.forEach(h => {
+    const lower = String(h || '').toLowerCase().trim();
+    if (!lower) return;
+    // Did we map this header to a known base key via fuzzy match?
+    let matchedBase = null;
+    for (const kw of Object.keys(baseKeyAliases)) {
+      if (lower.includes(kw)) { matchedBase = baseKeyAliases[kw]; break; }
+    }
+    if (matchedBase) {
+      usedBaseKeys.add(matchedBase);
+      return; // don't add a duplicate dynamic column
+    }
+    // Unknown header → add as a dynamic column
+    const key = '_cols.' + _sheetHeaderToKey(h);
+    cols.push({
+      key,
+      label: h,
+      type: 'text',
+      width: '140px',
+      dynamic: true
+    });
+  });
+
+  return cols;
+}
+
+// Read a cell value supporting dynamic "_cols.col_xxx" keys
+function _getCellValue(product, key) {
+  if (key && key.startsWith('_cols.')) {
+    const k = key.slice('_cols.'.length);
+    return product._cols ? (product._cols[k] != null ? product._cols[k] : '') : '';
+  }
+  return product[key];
+}
+
+// Write a cell value supporting dynamic keys
+function _setCellValue(product, key, val) {
+  if (key && key.startsWith('_cols.')) {
+    if (!product._cols) product._cols = {};
+    product._cols[key.slice('_cols.'.length)] = val;
+  } else {
+    product[key] = val;
+  }
+}
+
+// LEGACY alias — some old code still references SHEET_COLS directly
+const SHEET_COLS = SHEET_COLS_BASE;
+
 let _sheetFilterQuery = '';
 
 function renderSheetGrid(products) {
+  const cols = getSheetCols();
+
   if (!products.length) {
     return `<div style="padding:60px 20px;text-align:center">
       <div style="font-size:64px;opacity:0.4">📋</div>
-      <h3 style="margin:14px 0 8px">ยังไม่มีสินค้า</h3>
+      <h3 style="margin:14px 0 8px">ยังไม่มีสินค้าในหมวดนี้</h3>
       <p style="color:var(--text2);margin-bottom:18px">กด "Sync จาก Google Sheet" เพื่อดึงข้อมูลจาก Sheet หรือ "+ เพิ่มแถว" เพื่อเพิ่มเอง</p>
     </div>`;
   }
   
-  const headerHTML = SHEET_COLS.map(c => 
-    `<th style="min-width:${c.width};width:${c.width}">${c.label}${c.required ? ' <span style="color:#EF4444">*</span>' : ''}</th>`
+  const headerHTML = cols.map(c => 
+    `<th style="min-width:${c.width};width:${c.width}${c.dynamic ? ';background:#FFF4E6;color:#9A3412' : ''}" title="${c.dynamic ? 'คอลัมน์จาก Google Sheet (Sync)' : ''}">${escHtml(c.label)}${c.required ? ' <span style="color:#EF4444">*</span>' : ''}${c.dynamic ? ' <span style="font-size:9px;opacity:0.7">📥</span>' : ''}</th>`
   ).join('');
   
   const bodyHTML = products.map((p, i) => {
-    const stock = parseFloat(p.stock) || 0;
-    const minStock = parseFloat(p.minStock) || 30;
-    const lowClass = stock <= 0 ? 'low' : stock <= minStock ? 'warn' : 'ok';
-    const lowLabel = stock <= 0 ? 'หมด' : stock <= minStock ? 'ต่ำ' : 'OK';
-    
-    const cells = SHEET_COLS.map(c => {
-      const val = p[c.key];
+    const cells = cols.map(c => {
+      const val = _getCellValue(p, c.key);
       const isEmpty = val === undefined || val === null || val === '';
       const display = isEmpty ? '' : (c.type === 'number' ? numFmt(val, c.key === 'price' || c.key === 'cost' ? 2 : 0) : val);
       const className = `cell ${c.type === 'number' ? 'num' : ''} ${isEmpty ? 'empty' : ''}`;
-      return `<td><div class="${className}" data-pid="${p.id}" data-field="${c.key}" data-type="${c.type}" tabindex="0">${escHtml(display) || '—'}</div></td>`;
+      return `<td><div class="${className}" data-pid="${p.id}" data-field="${c.key}" data-type="${c.type}" tabindex="0">${escHtml(String(display)) || '—'}</div></td>`;
     }).join('');
     
     return `<tr data-rowid="${p.id}">
@@ -7965,7 +8457,8 @@ function startEditCell(cell, clearVal = false) {
   const product = DB.get('products', []).find(p => p.id === pid);
   if (!product) return;
   
-  const curVal = clearVal ? '' : (product[field] !== undefined && product[field] !== null ? product[field] : '');
+  const rawVal = clearVal ? '' : _getCellValue(product, field);
+  const curVal = (rawVal !== undefined && rawVal !== null) ? rawVal : '';
   
   cell.classList.add('editing');
   cell.innerHTML = `<input type="${type === 'number' ? 'number' : 'text'}" 
@@ -8021,8 +8514,8 @@ function commitEdit(cell) {
     return;
   }
   
-  const oldVal = products[idx][field];
-  products[idx][field] = newVal;
+  const oldVal = _getCellValue(products[idx], field);
+  _setCellValue(products[idx], field, newVal);
   products[idx].updatedAt = new Date().toISOString();
   DB.set('products', products);
   
@@ -8038,6 +8531,10 @@ function commitEdit(cell) {
     cell.style.transition = 'background-color 0.4s';
     cell.style.background = '#D1FAE5';
     setTimeout(() => { cell.style.background = ''; }, 400);
+    // If the user edited the category, the bottom tab counts need to refresh
+    if (field === 'category' && typeof renderStock === 'function' && currentPage === 'stock') {
+      setTimeout(() => renderStock(), 450);
+    }
   }
 }
 
@@ -8049,7 +8546,7 @@ function cancelEdit(cell) {
   const product = DB.get('products', []).find(p => p.id === pid);
   if (!product) return;
   
-  const val = product[field];
+  const val = _getCellValue(product, field);
   const isEmpty = val === undefined || val === null || val === '';
   const display = isEmpty ? '—' : (type === 'number' ? numFmt(val, field === 'price' || field === 'cost' ? 2 : 0) : escHtml(String(val)));
   
@@ -8095,10 +8592,17 @@ function moveCursor(currentCell, direction, autoEdit = false) {
 
 function addSheetRow() {
   let products = DB.get('products', []);
+  // If a category tab is active (and isn't "all" or "uncategorized"), pre-fill that
+  let presetCategory = '';
+  if (typeof activeCategoryTab !== 'undefined' && activeCategoryTab && activeCategoryTab !== '__none__') {
+    presetCategory = activeCategoryTab;
+  }
   const newProduct = {
     id: 'prod_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
     name: '',
+    code: '',
     brand: '',
+    category: presetCategory,
     unit: 'เส้น',
     stock: 0,
     initialStock: 0,
@@ -8147,9 +8651,10 @@ function exportStockCSV() {
   const products = DB.get('products', []);
   if (!products.length) { toast('ไม่มีข้อมูลให้ export', 'warning'); return; }
   
-  const headers = SHEET_COLS.map(c => c.label);
-  const rows = products.map(p => SHEET_COLS.map(c => {
-    const v = p[c.key];
+  const cols = getSheetCols();
+  const headers = cols.map(c => c.label);
+  const rows = products.map(p => cols.map(c => {
+    const v = _getCellValue(p, c.key);
     if (v === undefined || v === null) return '';
     const s = String(v);
     return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
