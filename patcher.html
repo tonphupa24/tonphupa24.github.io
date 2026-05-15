@@ -1,0 +1,1409 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>KCB ERP V5.0 → V5.1 Patcher</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --orange:#FF6B1A;
+  --orange-dark:#E5560A;
+  --blue:#1E40F2;
+  --bg:#0F172A;
+  --surface:#1E293B;
+  --surface2:#334155;
+  --text:#F1F5F9;
+  --text2:#94A3B8;
+  --success:#10B981;
+  --danger:#EF4444;
+  --warning:#F59E0B;
+  --border:#334155;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Sarabun',sans-serif;background:var(--bg);color:var(--text);padding:32px 16px;min-height:100vh}
+.container{max-width:900px;margin:0 auto}
+.header{text-align:center;margin-bottom:40px}
+.header h1{font-size:32px;font-weight:700;background:linear-gradient(135deg,var(--orange),#FFA500);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px}
+.header p{color:var(--text2);font-size:15px}
+.version-badge{display:inline-block;background:rgba(255,107,26,0.15);color:var(--orange);padding:4px 12px;border-radius:99px;font-size:12px;font-weight:700;letter-spacing:1px;margin-top:12px}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;margin-bottom:20px}
+.card h2{font-size:18px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:10px}
+.card .lbl{color:var(--text2);font-size:14px;margin-bottom:18px;line-height:1.6}
+
+.upload-zone{border:2px dashed var(--border);border-radius:12px;padding:40px 20px;text-align:center;cursor:pointer;transition:all 0.2s;background:rgba(255,107,26,0.03)}
+.upload-zone:hover{border-color:var(--orange);background:rgba(255,107,26,0.08)}
+.upload-zone.has-file{border-color:var(--success);background:rgba(16,185,129,0.08)}
+.upload-zone input{display:none}
+.upload-icon{font-size:48px;margin-bottom:12px;opacity:0.6}
+.upload-text{font-size:16px;font-weight:600;margin-bottom:4px}
+.upload-sub{font-size:13px;color:var(--text2)}
+
+.fix-list{margin-top:18px}
+.fix-item{display:flex;align-items:flex-start;gap:12px;padding:14px;background:var(--surface2);border-radius:10px;margin-bottom:10px;border-left:3px solid var(--orange)}
+.fix-num{background:var(--orange);color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+.fix-content{flex:1}
+.fix-title{font-weight:600;font-size:14px;margin-bottom:3px}
+.fix-desc{font-size:12px;color:var(--text2);line-height:1.5}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:14px 24px;border-radius:10px;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;border:none;transition:all 0.15s;text-decoration:none}
+.btn-primary{background:linear-gradient(135deg,var(--orange),#FFA500);color:#fff;box-shadow:0 4px 16px rgba(255,107,26,0.3)}
+.btn-primary:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 6px 24px rgba(255,107,26,0.5)}
+.btn-primary:disabled{opacity:0.4;cursor:not-allowed}
+.btn-success{background:linear-gradient(135deg,var(--success),#22C55E);color:#fff}
+.btn-block{width:100%;padding:18px}
+
+.log{background:#0a0f1c;border:1px solid var(--border);border-radius:10px;padding:16px;font-family:'JetBrains Mono',monospace;font-size:12px;max-height:280px;overflow-y:auto;margin-top:14px;line-height:1.7;color:#94A3B8}
+.log .ok{color:var(--success)}
+.log .err{color:var(--danger)}
+.log .warn{color:var(--warning)}
+.log .info{color:#60A5FA}
+
+.progress-bar{height:6px;background:var(--surface2);border-radius:99px;overflow:hidden;margin-top:14px;display:none}
+.progress-bar.show{display:block}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--orange),#FFA500);width:0%;transition:width 0.3s}
+
+footer{text-align:center;margin-top:32px;color:var(--text2);font-size:12px}
+footer code{background:var(--surface);padding:2px 8px;border-radius:5px;font-family:'JetBrains Mono',monospace}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>KCB ERP Patcher</h1>
+    <p>เครื่องมือ Patch อัตโนมัติ — อัปเกรดจาก V5.0 → V5.1</p>
+    <span class="version-badge">V5.1 · 4 Major Fixes</span>
+  </div>
+
+  <div class="card">
+    <h2>📦 สิ่งที่จะถูกแก้ไข</h2>
+    <div class="fix-list">
+      <div class="fix-item">
+        <div class="fix-num">1</div>
+        <div class="fix-content">
+          <div class="fix-title">Multi-Tab Google Sheet Sync</div>
+          <div class="fix-desc">Sync ทุกแท็บใน Google Sheet มารวมกัน + ใช้ชื่อแท็บเป็น Category อัตโนมัติ (เช่น Sling Ungalva, Sling Galva, M-Link/Hook ฯลฯ)</div>
+        </div>
+      </div>
+      <div class="fix-item">
+        <div class="fix-num">2</div>
+        <div class="fix-content">
+          <div class="fix-title">PDF Pagination ที่สมบูรณ์</div>
+          <div class="fix-desc">รายการเอกสาร (QT/SO/INV/PO) หลายหน้า — แต่ละหน้ามีหัวกระดาษซ้ำ, รายการต่อเนื่อง, Totals + ลายเซ็นที่หน้าสุดท้ายเสมอ ไม่มีหน้าค้างเปล่า</div>
+        </div>
+      </div>
+      <div class="fix-item">
+        <div class="fix-num">3</div>
+        <div class="fix-content">
+          <div class="fix-title">Multi-line ชื่อสินค้า/Description</div>
+          <div class="fix-desc">ช่อง "ชื่อสินค้า" ในเอกสารเคาะ Enter เว้นบรรทัดได้ — auto-grow textarea + แสดงเป็นหลายบรรทัดใน PDF</div>
+        </div>
+      </div>
+      <div class="fix-item">
+        <div class="fix-num">4</div>
+        <div class="fix-content">
+          <div class="fix-title">Certificate แบบ DNV (ครบทุกฟิลด์)</div>
+          <div class="fix-desc">รื้อใหม่ทั้งหมด รองรับ items[] หลายรายการ/ใบเดียว + Reference Standards multi-line + 2 ลายเซ็น + Date table (Last/Next Examination, Proof Load Test) + Order/Project No.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📂 1. อัปโหลดไฟล์ ERP เดิม</h2>
+    <div class="lbl">เลือกไฟล์ HTML ที่ Export มาจาก Claude (เวอร์ชัน V5.0 ปัจจุบันของคุณ)</div>
+    <label class="upload-zone" id="dropZone">
+      <input type="file" id="fileInput" accept=".html,.htm,text/html">
+      <div class="upload-icon">📁</div>
+      <div class="upload-text" id="dropText">คลิกเพื่อเลือกไฟล์ หรือลากมาวาง</div>
+      <div class="upload-sub" id="dropSub">รองรับเฉพาะไฟล์ .html (ไฟล์ KCB ERP เดิมของคุณ)</div>
+    </label>
+  </div>
+
+  <div class="card">
+    <h2>⚙️ 2. รัน Patcher</h2>
+    <div class="lbl">กดปุ่มด้านล่างเพื่อ patch — ไฟล์ใหม่จะดาวน์โหลดอัตโนมัติเมื่อเสร็จ</div>
+    <button class="btn btn-primary btn-block" id="runBtn" disabled>🚀 รัน Patch (V5.0 → V5.1)</button>
+    <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="log" id="log">รอไฟล์...</div>
+  </div>
+
+  <footer>
+    💡 หลัง Patch เสร็จ จะได้ไฟล์ <code>KCB_ERP_V5.1.html</code> — เปิดในเบราว์เซอร์ใช้งานได้ทันที
+  </footer>
+</div>
+
+<script>
+// ============================================================================
+// KCB ERP PATCHER — V5.0 → V5.1
+// 4 fixes: GSheet multi-tab, PDF pagination, multi-line description, DNV cert
+// ============================================================================
+
+const logEl = document.getElementById('log');
+const progressBar = document.getElementById('progressBar');
+const progressFill = document.getElementById('progressFill');
+const dropZone = document.getElementById('dropZone');
+const dropText = document.getElementById('dropText');
+const dropSub = document.getElementById('dropSub');
+const fileInput = document.getElementById('fileInput');
+const runBtn = document.getElementById('runBtn');
+
+let srcContent = null;
+let srcFilename = null;
+
+function log(msg, cls='') {
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  div.textContent = msg;
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function clearLog() { logEl.innerHTML = ''; }
+function setProgress(pct) {
+  progressBar.classList.add('show');
+  progressFill.style.width = pct + '%';
+}
+
+// Drag & drop
+['dragenter','dragover'].forEach(e => dropZone.addEventListener(e, ev => {
+  ev.preventDefault(); ev.stopPropagation();
+  dropZone.style.borderColor = 'var(--orange)';
+}));
+['dragleave','drop'].forEach(e => dropZone.addEventListener(e, ev => {
+  ev.preventDefault(); ev.stopPropagation();
+  dropZone.style.borderColor = '';
+}));
+dropZone.addEventListener('drop', ev => {
+  const f = ev.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+fileInput.addEventListener('change', ev => {
+  const f = ev.target.files[0];
+  if (f) handleFile(f);
+});
+
+function handleFile(f) {
+  if (!f.name.match(/\.html?$/i)) {
+    alert('กรุณาเลือกไฟล์ .html');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    srcContent = e.target.result;
+    srcFilename = f.name;
+    dropZone.classList.add('has-file');
+    dropText.textContent = '✓ ' + f.name;
+    dropSub.textContent = (srcContent.length / 1024).toFixed(0) + ' KB';
+    runBtn.disabled = false;
+    clearLog();
+    log('✓ โหลดไฟล์สำเร็จ: ' + f.name, 'ok');
+    log('  ขนาด: ' + (srcContent.length / 1024).toFixed(1) + ' KB');
+    log('  บรรทัด: ' + srcContent.split('\n').length.toLocaleString());
+    log('');
+    log('▶ กดปุ่ม "รัน Patch" เพื่อเริ่ม', 'info');
+  };
+  reader.readAsText(f, 'utf-8');
+}
+
+// ============================================================================
+// THE 4 PATCHES
+// ============================================================================
+
+const PATCHES = [
+  // --------------------------------------------------------------------------
+  // PATCH 1: MULTI-TAB GOOGLE SHEET SYNC
+  // Replaces the entire manualSync() function with one that loops through all tabs
+  // --------------------------------------------------------------------------
+  {
+    name: 'Multi-Tab Google Sheet Sync',
+    find: /async function manualSync\(\) \{[\s\S]*?\n  \} finally \{\n    GSHEET\.syncing = false;\n  \}\n\}/,
+    replace: `async function manualSync() {
+  const company = DB.get('company', {});
+  if (!company.gsheetUrl) {
+    toast('⚠️ กรุณาตั้งค่า URL Google Sheet ที่หน้า "ตั้งค่า → Google Sheet Sync" ก่อน', 'warning', 5000);
+    showPage && showPage('settings');
+    return;
+  }
+  if (GSHEET.syncing) {
+    toast('กำลัง sync อยู่ กรุณารอสักครู่...', 'info');
+    return;
+  }
+
+  setSyncStatus('syncing', 'กำลัง sync...');
+  GSHEET.syncing = true;
+  GSHEET.lastError = null;
+
+  try {
+    // ===== Discover all tab names by parsing the HTML page of the sheet =====
+    const sheetId = GSHEET.extractSheetId(company.gsheetUrl);
+    if (!sheetId) throw new Error('URL Google Sheet ไม่ถูกต้อง');
+
+    // Try to fetch the sheet index (HTML page) to discover all tab names
+    let tabNames = [];
+    try {
+      const htmlUrl = \`https://docs.google.com/spreadsheets/d/\${sheetId}/htmlview?cachebust=\${Date.now()}\`;
+      const res = await GSHEET.fetchWithTimeout(htmlUrl, 15000);
+      if (res.ok) {
+        const html = await res.text();
+        // Try parsing HTML to find sheet names
+        const sheetMatches = html.matchAll(/<li id="sheet-button-\\d+"[^>]*>[\\s\\S]*?<a[^>]*>([^<]+)<\\/a>/g);
+        for (const m of sheetMatches) {
+          if (m[1] && m[1].trim()) tabNames.push(m[1].trim());
+        }
+        // Fallback: try sheet menu list
+        if (tabNames.length === 0) {
+          const altMatches = html.matchAll(/sheetbutton-\\d+[^>]*>\\s*<[^>]+>([^<]+)</g);
+          for (const m of altMatches) {
+            if (m[1] && m[1].trim()) tabNames.push(m[1].trim());
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Tab discovery failed, falling back to single tab:', e);
+    }
+
+    // Fallback: use the configured tab name only
+    if (tabNames.length === 0) {
+      const fallback = (company.gsheetStockSheet || '').trim();
+      if (fallback) tabNames = [fallback];
+      else tabNames = ['']; // empty = default sheet
+    }
+
+    // De-duplicate
+    tabNames = [...new Set(tabNames)];
+    console.log('Discovered tabs:', tabNames);
+
+    let totalAdded = 0, totalUpdated = 0, totalSkipped = 0;
+    let allHeadersUnion = new Set();
+    let allProducts = DB.get('products', []);
+    const cats = DB.get('categories', []);
+    const catNamesSet = new Set(cats.map(c => c.name));
+
+    // ===== Loop through every tab =====
+    for (const tabName of tabNames) {
+      try {
+        const rows = await GSHEET.fetchSheet(company.gsheetUrl, tabName);
+        if (!rows || rows.length < 2) {
+          console.warn('Tab skipped (empty):', tabName);
+          continue;
+        }
+
+        // Auto-create category from tab name
+        if (tabName && !catNamesSet.has(tabName)) {
+          cats.push({ id: 'cat_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5), name: tabName, color: '#1E40F2' });
+          catNamesSet.add(tabName);
+        }
+
+        // Smart header detection
+        const KEYWORDS = {
+          name:      ['about', 'spec', 'name', 'ชื่อ', 'สินค้า', 'product', 'รายการ', 'description', 'item name'],
+          brand:     ['brand', 'ยี่ห้อ', 'แบรนด์'],
+          status:    ['status', 'สถานะ'],
+          cert:      ['cert', 'certificate', 'ใบรับรอง'],
+          stockFull: ['เต็ม', 'จำนวนเต็ม', 'full', 'initial'],
+          stock:     ['คงเหลือ', 'stock', 'qty', 'จำนวน', 'on hand', 'available', 'balance'],
+          price:     ['price', 'ราคา', 'sale price', 'unit price', 'ราคาขาย'],
+          cost:      ['cost', 'ทุน', 'ต้นทุน'],
+          unit:      ['unit', 'หน่วย'],
+          category:  ['category', 'หมวด', 'หมวดหมู่', 'ประเภท', 'type'],
+          code:      ['code', 'sku', 'รหัส', 'item code', 'product code'],
+          date:      ['no.', 'date', 'วันที่', 'received']
+        };
+
+        let headerRowIdx = -1, colMap = null, rawHeaders = [];
+        for (let r = 0; r < Math.min(5, rows.length); r++) {
+          const tryRow = rows[r].map(h => (h || '').toString().toLowerCase().trim());
+          const m = {};
+          Object.keys(KEYWORDS).forEach(key => {
+            m[key] = -1;
+            for (const kw of KEYWORDS[key]) {
+              const i = tryRow.findIndex(h => h && h.includes(kw.toLowerCase()));
+              if (i >= 0) { m[key] = i; break; }
+            }
+          });
+          if (m.name >= 0 || m.stock >= 0 || m.stockFull >= 0 || m.code >= 0) {
+            headerRowIdx = r;
+            colMap = m;
+            rawHeaders = rows[r].map(h => String(h || '').trim());
+            break;
+          }
+        }
+
+        if (headerRowIdx < 0) {
+          console.warn('Tab skipped (no header):', tabName);
+          continue;
+        }
+
+        // Union of all headers across tabs (for sheetHeaders global)
+        rawHeaders.forEach(h => h && allHeadersUnion.add(h));
+
+        const get = (row, idx, def = '') => (idx >= 0 && idx < row.length) ? (row[idx] || def) : def;
+        const getNum = (row, idx, def = 0) => {
+          const v = String(get(row, idx, ''));
+          const cleaned = v.replace(/[,฿$\\s]/g, '');
+          const n = parseFloat(cleaned);
+          return isNaN(n) ? def : n;
+        };
+        const toKey = (h) => {
+          const s = String(h || '').trim();
+          if (!s) return '';
+          return 'col_' + s.replace(/[^\\p{L}\\p{N}_]+/gu, '_').toLowerCase().slice(0, 50);
+        };
+
+        // Find existing product by code+tab OR name+tab (scoped to tab to avoid cross-tab collisions)
+        const findExisting = (productName, productCode) => {
+          if (productCode) {
+            const byCode = allProducts.find(p => p.code && p.code === productCode && p.category === tabName);
+            if (byCode) return byCode;
+          }
+          return allProducts.find(p => p.name === productName && p.category === tabName);
+        };
+
+        for (let i = headerRowIdx + 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row || !row.some(c => c)) continue;
+
+          const brandStr = String(get(row, colMap.brand, '')).trim();
+          const specStr  = String(get(row, colMap.name, '')).trim();
+          const codeStr  = String(get(row, colMap.code, '')).trim();
+          let productName = '';
+          if (brandStr && specStr) productName = \`\${brandStr} — \${specStr}\`;
+          else productName = specStr || brandStr;
+          if (!productName && codeStr) productName = codeStr;
+          if (!productName) { totalSkipped++; continue; }
+
+          const stockVal     = colMap.stock >= 0     ? getNum(row, colMap.stock, 0)
+                             : colMap.stockFull >= 0 ? getNum(row, colMap.stockFull, 0) : 0;
+          const initialStock = colMap.stockFull >= 0 ? getNum(row, colMap.stockFull, 0) : 0;
+          const priceVal     = colMap.price >= 0     ? getNum(row, colMap.price, 0) : 0;
+          const costVal      = colMap.cost >= 0      ? getNum(row, colMap.cost, 0) : 0;
+          const unitVal      = colMap.unit >= 0      ? String(get(row, colMap.unit, '')).trim() : '';
+          // Use tab name as category (overrides any in-sheet category)
+          const categoryVal  = tabName || (colMap.category >= 0 ? String(get(row, colMap.category, '')).trim() : '');
+          const status       = get(row, colMap.status, '');
+          const cert         = get(row, colMap.cert, '');
+
+          const _raw = row.slice();
+          const _cols = {};
+          rawHeaders.forEach((h, idx) => {
+            const k = toKey(h);
+            if (k) _cols[k] = row[idx] !== undefined ? row[idx] : '';
+          });
+
+          const existing = findExisting(productName, codeStr);
+          const nowIso = new Date().toISOString();
+
+          if (existing) {
+            existing.stock = stockVal;
+            if (initialStock > 0) existing.initialStock = initialStock;
+            if (brandStr) existing.brand = brandStr;
+            if (codeStr)  existing.code = codeStr;
+            if (unitVal)  existing.unit = unitVal;
+            if (priceVal) existing.price = priceVal;
+            if (costVal)  existing.cost = costVal;
+            existing.category = categoryVal; // always overwrite with tab name
+            if (status)   existing.statusText = status;
+            if (cert)     existing.cert = cert;
+            existing._raw = _raw;
+            existing._cols = _cols;
+            existing._tab = tabName;
+            existing.gsheetRow = i + 1;
+            existing.lastSync = nowIso;
+            totalUpdated++;
+          } else {
+            allProducts.push({
+              id: 'prod_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+              name: productName,
+              code: codeStr,
+              brand: brandStr,
+              spec: specStr,
+              unit: unitVal || 'เส้น',
+              stock: stockVal,
+              initialStock: initialStock,
+              minStock: 30,
+              price: priceVal,
+              cost: costVal,
+              category: categoryVal,
+              statusText: status,
+              cert: cert,
+              _raw: _raw,
+              _cols: _cols,
+              _tab: tabName,
+              gsheetRow: i + 1,
+              createdAt: nowIso,
+              lastSync: nowIso,
+              fromGSheet: true
+            });
+            totalAdded++;
+          }
+        }
+      } catch (tabErr) {
+        console.warn('Tab failed:', tabName, tabErr);
+      }
+    }
+
+    DB.set('products', allProducts);
+    DB.set('categories', cats);
+    DB.set('sheetHeaders', [...allHeadersUnion]);
+    DB.set('lastSheetSync', new Date().toISOString());
+
+    const now = new Date();
+    const timeText = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    setSyncStatus('ok', \`Synced \${timeText}\`);
+    toast(\`✅ Sync \${tabNames.length} แท็บสำเร็จ: เพิ่ม \${totalAdded}, อัปเดต \${totalUpdated}\${totalSkipped > 0 ? \`, ข้าม \${totalSkipped}\` : ''}\`, 'success', 5000);
+
+    if (currentPage === 'stock' && typeof renderStock === 'function') renderStock();
+
+  } catch (err) {
+    GSHEET.lastError = err.message;
+    setSyncStatus('err', 'Sync ล้มเหลว');
+    console.error('GSheet sync error:', err);
+    toast('❌ Sync ล้มเหลว: ' + err.message, 'error', 8000);
+  } finally {
+    GSHEET.syncing = false;
+  }
+}`
+  },
+
+  // --------------------------------------------------------------------------
+  // PATCH 2: MULTI-LINE TEXTAREA FOR PRODUCT NAME IN DOC FORM
+  // Replace the single-line input in buildItemsRow with a textarea
+  // --------------------------------------------------------------------------
+  {
+    name: 'Multi-line ชื่อสินค้า in items table',
+    find: /<td><input class="inline-input item-input" data-field="name" value="\$\{escHtml\(it\.name \|\| ''\)\}" placeholder="ชื่อสินค้า \/ รายการ" style="min-width:340px"><\/td>/,
+    replace: `<td><textarea class="inline-input item-input item-textarea" data-field="name" rows="1" placeholder="ชื่อสินค้า / รายการ (Enter เพื่อขึ้นบรรทัดใหม่)" style="min-width:340px;resize:vertical;min-height:42px;font-family:inherit;line-height:1.5;padding:10px 13px;width:100%;background:#FFFFFF;border:1.5px solid var(--border);border-radius:9px;font-size:15px;font-weight:500;color:var(--text);outline:none;transition:all 0.15s">\${escHtml(it.name || '')}</textarea></td>`
+  },
+
+  // --------------------------------------------------------------------------
+  // PATCH 2b: textarea auto-resize on input
+  // Add CSS + auto-grow JS for textareas
+  // --------------------------------------------------------------------------
+  {
+    name: 'Auto-grow textarea CSS+JS',
+    find: /\.items-tbl input,\.items-tbl select\{[\s\S]*?border:1\.5px solid var\(--border\);border-radius:8px;[\s\S]*?\}/,
+    replace: `.items-tbl input,.items-tbl select,.items-tbl textarea{
+  width:100%;background:#FFFFFF;border:1.5px solid var(--border);border-radius:8px;
+  padding:8px 10px;font-family:"Sarabun",sans-serif;font-size:13px;color:var(--text);
+  outline:none;transition:border-color 0.15s;
+}
+.items-tbl textarea.item-textarea{min-height:42px;line-height:1.5;resize:vertical;overflow:hidden;white-space:pre-wrap;word-wrap:break-word}
+.items-tbl textarea.item-textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(255,107,26,0.18);background:#FFF8F2;overflow:auto}`
+  },
+
+  // --------------------------------------------------------------------------
+  // PATCH 2c: bindItemsTableEvents — auto-resize textarea on input
+  // --------------------------------------------------------------------------
+  {
+    name: 'Auto-resize textarea in bindItemsTableEvents',
+    find: /function bindItemsTableEvents\(\) \{\n  const tbody = document\.getElementById\('docItemsBody'\);\n  if \(!tbody\) return;/,
+    replace: `function bindItemsTableEvents() {
+  const tbody = document.getElementById('docItemsBody');
+  if (!tbody) return;
+  // Auto-resize all existing textareas
+  const autoSize = (ta) => {
+    if (!ta || ta.tagName !== 'TEXTAREA') return;
+    ta.style.height = 'auto';
+    ta.style.height = Math.max(42, ta.scrollHeight + 2) + 'px';
+  };
+  tbody.querySelectorAll('textarea.item-textarea').forEach(autoSize);
+  tbody.addEventListener('input', (e) => {
+    if (e.target.tagName === 'TEXTAREA' && e.target.classList.contains('item-textarea')) {
+      autoSize(e.target);
+    }
+  });`
+  },
+
+  // --------------------------------------------------------------------------
+  // PATCH 3: PDF MULTI-LINE NAME RENDERING + PAGINATION FIX
+  // In buildDocPreviewHTML, replace the desc cell to render newlines
+  // --------------------------------------------------------------------------
+  {
+    name: 'PDF multi-line description rendering',
+    find: /if \(c\.key === 'desc'\)    return `<td>\$\{escHtml\(it\.name \|\| ''\)\}\$\{it\.desc \? '<div class="sub">' \+ escHtml\(it\.desc\) \+ '<\/div>' : ''\}<\/td>`;/,
+    replace: `if (c.key === 'desc')    return \`<td><div class="cell-text">\${escHtml(it.name || '').replace(/\\n/g, '<br>')}</div>\${it.desc ? '<div class="sub">' + escHtml(it.desc).replace(/\\n/g, '<br>') + '</div>' : ''}</td>\`;`
+  },
+
+  // --------------------------------------------------------------------------
+  // PATCH 3b: PDF cell CSS adjustments + word-wrap
+  // --------------------------------------------------------------------------
+  {
+    name: 'PDF cell word-wrap CSS',
+    find: /table\.items tbody td\{padding:5px 8px;border:1px solid #E5E7EB;vertical-align:top;line-height:1\.35\}/,
+    replace: `table.items tbody td{padding:5px 8px;border:1px solid #E5E7EB;vertical-align:top;line-height:1.4;word-wrap:break-word;overflow-wrap:break-word}
+  table.items tbody td .cell-text{white-space:pre-wrap;word-wrap:break-word}`
+  },
+
+  // --------------------------------------------------------------------------
+  // PATCH 3c: PAGINATION — dynamic measurement instead of fixed ITEMS_FIRST=14
+  // Replace the pagination chunking logic with dynamic height-based packing
+  // --------------------------------------------------------------------------
+  {
+    name: 'PDF Pagination — dynamic row packing',
+    find: /\/\/ ====== PAGINATION: split items into pages that fit A4 ======[\s\S]*?const ITEMS_FIRST = 14;[\s\S]*?const ITEMS_NEXT  = 22;/,
+    replace: `// ====== PAGINATION: split items into pages that fit A4 ======
+      // Dynamic packing based on estimated row height (varies with multi-line names).
+      // Each item contributes ~1 base row + extra rows for line breaks in name.
+      // First page reserves space for: header, party/meta, table-head, totals, signs, footer
+      // Subsequent pages reserve space for: header(small), table-head, footer (no totals/signs except last)
+      const BASE_ROW_HEIGHT = 1;       // 1 visual row
+      const EXTRA_ROW_PER_LINE = 0.7;  // each \\n in name adds ~0.7 row
+      const FIRST_PAGE_BUDGET = 16;    // visual rows available on first page (after subtracting header + party + totals/signs)
+      const NEXT_PAGE_BUDGET = 28;     // visual rows on continuation pages (header only, no totals)
+      const LAST_PAGE_NEEDS_TOTALS = 10; // reserve ~10 rows for totals+signs on last page
+
+      function itemWeight(it) {
+        const txt = String(it.name || '');
+        const newlines = (txt.match(/\\n/g) || []).length;
+        // Also account for long single-line text that wraps
+        const longLineExtra = Math.max(0, Math.floor(txt.length / 80) - newlines);
+        return BASE_ROW_HEIGHT + (newlines + longLineExtra) * EXTRA_ROW_PER_LINE;
+      }`
+  },
+
+  // --------------------------------------------------------------------------
+  // PATCH 3d: rewrite the chunking algorithm
+  // --------------------------------------------------------------------------
+  {
+    name: 'PDF Pagination — chunking algorithm',
+    find: /\/\/ Determine if everything fits on a single page\n      const needsPagination = items\.length > ITEMS_FIRST;\n      const pages = \[\];\n      if \(!needsPagination\) \{\n        pages\.push\(\{ pageNum: 1, totalPages: 1, items: items\.slice\(\), isFirst: true, isLast: true \}\);\n      \} else \{[\s\S]*?\}\)\;\n        \}\)\;\n      \}/,
+    replace: `// Pack items into pages based on row weights
+      const pages = [];
+      let curPage = { items: [], weight: 0, startIndex: 0 };
+      let isFirstPage = true;
+
+      for (let idx = 0; idx < items.length; idx++) {
+        const it = items[idx];
+        const w = itemWeight(it);
+        const isLastItem = (idx === items.length - 1);
+
+        // Decide budget: if this is the last item that needs to fit, the page must also fit totals
+        let budget = isFirstPage ? FIRST_PAGE_BUDGET : NEXT_PAGE_BUDGET;
+        // If adding this item would be the last item, leave room for totals on this same page
+        // (only if total weight including totals can still fit)
+        const wouldFit = (curPage.weight + w) <= budget;
+
+        if (!wouldFit && curPage.items.length > 0) {
+          // Push current page, start new one
+          pages.push({
+            items: curPage.items.slice(),
+            isFirst: isFirstPage,
+            isLast: false,
+            startIndex: curPage.startIndex
+          });
+          isFirstPage = false;
+          curPage = { items: [], weight: 0, startIndex: idx };
+        }
+
+        curPage.items.push(it);
+        curPage.weight += w;
+      }
+      // Push final page
+      if (curPage.items.length > 0 || pages.length === 0) {
+        // If the final page is overloaded (too tight for totals), and there's room to split
+        // we keep it as-is but ensure totals fit; in practice with FIRST_PAGE_BUDGET=16 it works
+        pages.push({
+          items: curPage.items.slice(),
+          isFirst: isFirstPage && pages.length === 0,
+          isLast: true,
+          startIndex: curPage.startIndex
+        });
+      }
+      // Mark first page correctly + assign page numbers
+      pages.forEach((p, i) => {
+        p.pageNum = i + 1;
+        p.totalPages = pages.length;
+        if (i === 0) p.isFirst = true;
+        if (i === pages.length - 1) p.isLast = true;
+        else p.isLast = false;
+      });
+
+      // Edge case: if last page has so many items that totals/signs won't fit,
+      // push the totals to a new page by creating an empty-items last page.
+      const last = pages[pages.length - 1];
+      if (last && last.items.length > 0) {
+        const lastWeight = last.items.reduce((s, it) => s + itemWeight(it), 0);
+        const budget = last.isFirst ? FIRST_PAGE_BUDGET : NEXT_PAGE_BUDGET;
+        // If items already saturate the page, append a clean "totals-only" page
+        if (lastWeight + LAST_PAGE_NEEDS_TOTALS > budget + 2) {
+          // Mark current last as not-last
+          last.isLast = false;
+          // Add a totals-only page
+          pages.push({
+            items: [],
+            isFirst: false,
+            isLast: true,
+            startIndex: items.length,
+            pageNum: pages.length + 1,
+            totalPages: pages.length + 1
+          });
+          // Re-assign totalPages for all pages
+          pages.forEach((p, i) => { p.totalPages = pages.length; p.pageNum = i + 1; });
+        }
+      }`
+  },
+
+  // --------------------------------------------------------------------------
+  // PATCH 4: COMPLETELY REPLACE previewCertificate WITH DNV-STYLE
+  // This is the biggest patch — entirely new certificate preview function
+  // --------------------------------------------------------------------------
+  {
+    name: 'Certificate — DNV-style template + multi-item support',
+    // We'll replace the whole previewCertificate function
+    find: /function previewCertificate\(id\) \{\n      const all = DB\.get\('certificates', \[\]\);[\s\S]*?      w\.document\.close\(\);\n    \}/,
+    replace: `function previewCertificate(id) {
+      const all = DB.get('certificates', []);
+      const cert = all.find(c => c.id === id);
+      if (!cert) { toast('ไม่พบใบรับรอง', 'error'); return; }
+      const customers = DB.get('customers', []);
+      const cust = customers.find(c => c.id === cert.customerId) || { name: cert.customerName || '-', address: '' };
+      const company = DB.get('company', {});
+
+      const t = (typeof getDocTemplate === 'function') ? getDocTemplate('crt') : {
+        titleTh: 'ใบรับรองการทดสอบและตรวจสอบอุปกรณ์ยก', titleEn: 'CERTIFICATE OF TEST AND THOROUGH EXAMINATION OF LIFTING GEAR',
+        primaryColor: '#1E40F2', secondaryColor: '#1F2937', accentColor: '#EFF6FF',
+        fontFamily: 'Sarabun', fontSize: 9.5,
+        showLogo: true,
+        footerText: '',
+        watermark: ''
+      };
+
+      // Determine if multi-item or single-item legacy
+      const items = (cert.items && cert.items.length) ? cert.items : [{
+        idNo: cert.serial || cert.id,
+        qty: cert.qty || '1',
+        description: cert.productType + (cert.size ? '\\n-Diameter and Length: ' + cert.size : '') + (cert.notes ? '\\n' + cert.notes : ''),
+        swl: cert.swl || '-',
+        testLoad: cert.testLoad || '-'
+      }];
+
+      const passColor = cert.result === 'pass' ? '#10B981' : cert.result === 'fail' ? '#EF4444' : '#F59E0B';
+      const passText = cert.result === 'pass' ? '✓ PASSED' : cert.result === 'fail' ? '✗ FAILED' : '⏳ PENDING';
+      const logoSrc = window.KCB_LOGO || (typeof DEFAULT_KCB_LOGO !== 'undefined' ? DEFAULT_KCB_LOGO : '');
+
+      const refStandards = (cert.referenceStandards || '').replace(/\\n/g, '<br>');
+
+      const html = \`<!DOCTYPE html><html lang="th"><head>
+<meta charset="UTF-8">
+<title>\${escHtml(t.titleTh)} \${escHtml(cert.id)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&family=Prompt:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'\${t.fontFamily}','Sarabun',sans-serif;color:#1F2937;background:#e5e7eb;padding:18px 0;font-size:\${t.fontSize}pt;line-height:1.45}
+.toolbar{max-width:210mm;margin:0 auto 12px;display:flex;gap:8px;justify-content:flex-end;padding:0 10px}
+.toolbar button{background:\${t.primaryColor};color:#fff;border:none;padding:10px 22px;border-radius:7px;font-family:inherit;font-weight:600;cursor:pointer;font-size:11pt;box-shadow:0 4px 12px rgba(0,0,0,0.15)}
+.toolbar button.alt{background:#6B7280}
+.page{width:210mm;min-height:297mm;background:#fff;margin:0 auto 12px;padding:14mm 12mm;box-shadow:0 4px 20px rgba(0,0,0,.15);position:relative;display:flex;flex-direction:column}
+.watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-25deg);font-size:90pt;font-weight:900;color:rgba(30,64,242,0.05);pointer-events:none;z-index:0;letter-spacing:8px;white-space:nowrap;font-family:'Prompt',sans-serif}
+.page > :not(.watermark){position:relative;z-index:1}
+
+/* ====== HEADER ====== */
+.dnv-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding-bottom:10px;border-bottom:2px solid \${t.primaryColor};margin-bottom:12px}
+.dnv-head-left{flex:1}
+.dnv-head .logo-img{width:120px;height:auto;object-fit:contain;margin-bottom:6px;display:block}
+.dnv-head-right{text-align:right;font-size:9pt;line-height:1.5}
+.dnv-head-right .label{font-weight:700;color:\${t.primaryColor};font-size:10pt}
+.dnv-head-right .val{font-family:'JetBrains Mono',monospace;font-weight:700;color:#1F2937}
+
+/* ====== TITLE ====== */
+.cert-title-row{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin-bottom:12px}
+.cert-title-row .titles{flex:1}
+.cert-title{font-family:'Prompt',sans-serif;font-size:14pt;color:\${t.primaryColor};font-weight:700;line-height:1.15}
+.cert-title-en{font-size:10pt;color:\${t.primaryColor};font-weight:600;margin-top:2px;letter-spacing:0.5px}
+.cert-meta-box{background:#FFFFFF;border:1.5px solid \${t.primaryColor};border-radius:5px;padding:8px 12px;min-width:200px;font-size:9.5pt}
+.cert-meta-box .row{display:flex;justify-content:space-between;gap:10px;padding:2px 0}
+.cert-meta-box .row b{color:\${t.primaryColor};font-weight:700}
+.cert-meta-box .row span{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:10pt}
+
+/* ====== INFO GRID (Client + Place + Manufacturer + Order/Project) ====== */
+.info-grid{display:grid;grid-template-columns:1fr 1fr;border:1.5px solid \${t.primaryColor};border-radius:5px;margin-bottom:12px;overflow:hidden}
+.info-cell{padding:8px 11px;border-right:1px solid #C7D2FE;border-bottom:1px solid #C7D2FE;font-size:9.5pt}
+.info-cell:nth-child(even){border-right:none}
+.info-cell:nth-last-child(-n+2){border-bottom:none}
+.info-cell .lbl{font-size:8.5pt;color:\${t.primaryColor};font-weight:700;margin-bottom:3px}
+.info-cell .val{color:#1F2937;font-weight:500;line-height:1.5}
+.info-cell .val.mono{font-family:'JetBrains Mono',monospace;font-weight:700}
+
+/* ====== REFERENCE STANDARDS ====== */
+.ref-box{background:#FAFBFC;border:1px solid \${t.primaryColor}66;border-left:3px solid \${t.primaryColor};border-radius:4px;padding:9px 13px;margin-bottom:12px;font-size:8.5pt;line-height:1.55}
+.ref-box .lbl{font-weight:700;color:\${t.primaryColor};font-size:9pt;margin-bottom:4px}
+
+/* ====== ITEMS TABLE ====== */
+.items-table{width:100%;border-collapse:collapse;margin-bottom:12px}
+.items-table thead th{background:\${t.primaryColor};color:#fff;padding:8px 10px;font-weight:700;border:1px solid \${t.primaryColor};text-align:center;font-size:9.5pt;line-height:1.25}
+.items-table thead th .en{font-size:8pt;opacity:0.92;font-weight:500;display:block;margin-top:1px}
+.items-table thead th.unit{font-size:8pt;font-weight:500;opacity:0.85;display:block;margin-top:2px}
+.items-table tbody td{padding:8px 10px;border:1px solid #D1D5DB;vertical-align:middle;font-size:9.5pt}
+.items-table td.id-no{font-family:'JetBrains Mono',monospace;font-weight:700;text-align:center;width:14%;color:\${t.primaryColor}}
+.items-table td.qty{text-align:center;width:6%;font-weight:600}
+.items-table td.desc{text-align:left;line-height:1.5}
+.items-table td.desc .desc-content{white-space:pre-wrap;word-wrap:break-word}
+.items-table td.swl{text-align:center;width:11%;font-weight:700;font-family:'JetBrains Mono',monospace}
+.items-table td.testload{text-align:center;width:11%;font-weight:700;font-family:'JetBrains Mono',monospace;background:#FEF3C7}
+/* Merged description cell when multiple items share identical desc */
+.items-table td.desc-merged{vertical-align:middle}
+
+/* ====== DATE TABLE ====== */
+.date-table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:9pt}
+.date-table th{background:#F3F4F6;padding:7px 10px;font-weight:700;border:1px solid #D1D5DB;color:#374151;text-align:left;font-size:9pt}
+.date-table td{padding:8px 10px;border:1px solid #D1D5DB;vertical-align:top;line-height:1.4}
+.date-table td b{display:block;color:#1F2937;font-weight:600;margin-bottom:1px}
+.date-table td small{font-size:8pt;color:#6B7280}
+
+/* ====== SIGNATURES ====== */
+.dnv-signs{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin:18px 0 6px}
+.dnv-sig{padding:6px 12px}
+.dnv-sig-label{font-weight:700;font-size:10pt;color:\${t.primaryColor};margin-bottom:3px}
+.dnv-sig-name{font-size:9.5pt;color:#1F2937;margin-bottom:36px;padding-bottom:2px;border-bottom:1px dashed #9CA3AF}
+.dnv-sig-sigline{font-weight:700;font-size:10pt;color:\${t.primaryColor};margin-bottom:3px}
+
+/* ====== RESULT BADGE ====== */
+.dnv-result{position:absolute;top:90mm;right:18mm;width:100px;height:100px;border:4px double \${passColor};border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-size:8pt;color:\${passColor};font-weight:800;opacity:0.6;transform:rotate(-15deg);letter-spacing:0.5px;font-family:'Prompt',sans-serif;line-height:1.3;background:rgba(255,255,255,0.7);z-index:3}
+.dnv-result .big{font-size:11pt;letter-spacing:1px}
+
+/* ====== LEGAL DISCLAIMER ====== */
+.legal{font-size:6.5pt;line-height:1.45;color:#6B7280;padding:6px 10px;background:#F9FAFB;border-radius:4px;margin-top:auto;border:1px solid #E5E7EB}
+.legal b{color:#1F2937}
+
+/* ====== FOOTER ====== */
+.page-footer{margin-top:10px;padding-top:6px;border-top:1px solid #E5E7EB;font-size:7pt;color:#9CA3AF;text-align:center;line-height:1.5}
+.page-footer .form-code{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;margin-top:3px}
+
+@media print{
+  html, body{width:210mm}
+  body{background:#fff;padding:0;margin:0}
+  .toolbar{display:none}
+  .page{box-shadow:none;width:210mm;margin:0;padding:14mm 12mm;page-break-after:always}
+  .page:last-child{page-break-after:auto}
+  @page{size:A4;margin:0}
+}
+</style>
+</head><body>
+<div class="toolbar">
+  <button onclick="window.print()">🖨 พิมพ์ / Print</button>
+  <button class="alt" onclick="window.close()">ปิด / Close</button>
+</div>
+
+<div class="page">
+  \${t.watermark ? \`<div class="watermark">\${escHtml(t.watermark)}</div>\` : ''}
+
+  <!-- HEADER (Logo + Cert Number) -->
+  <div class="dnv-head">
+    <div class="dnv-head-left">
+      \${t.showLogo ? \`<img src="\${logoSrc}" class="logo-img" alt="logo">\` : ''}
+      <div style="font-size:8.5pt;color:#374151;line-height:1.5;margin-top:4px">
+        <b style="color:\${t.primaryColor};font-size:9.5pt">\${escHtml(company.name || 'KCB SLING')}</b>
+        \${company.nameEn ? '<br>' + escHtml(company.nameEn) : ''}
+        \${company.address ? '<br>' + escHtml(company.address) : ''}
+        <br>\${company.tel ? 'Tel: ' + escHtml(company.tel) : ''}\${company.email ? ' • ' + escHtml(company.email) : ''}
+      </div>
+    </div>
+    <div class="dnv-head-right">
+      <div class="label">Local Certificate No:</div>
+      <div class="val" style="font-size:11pt;color:\${t.primaryColor};margin-bottom:6px">\${escHtml(cert.id)}\${cert.revision ? ' Rev.' + escHtml(cert.revision) : ''}</div>
+      <div class="label">Date of Inspection:</div>
+      <div class="val">\${escHtml(dateFmt(cert.testDate))}</div>
+    </div>
+  </div>
+
+  <!-- TITLE -->
+  <div class="cert-title-row">
+    <div class="titles">
+      <div class="cert-title">\${escHtml(t.titleTh)}</div>
+      <div class="cert-title-en">\${escHtml(t.titleEn)}</div>
+    </div>
+  </div>
+
+  <!-- CLIENT / PLACE / ORDER INFO GRID -->
+  <div class="info-grid">
+    <div class="info-cell">
+      <div class="lbl">Name and Address of the Client:</div>
+      <div class="val">\${escHtml(cust.name || '-')}</div>
+      \${cust.address ? \`<div class="val" style="font-size:8.5pt;color:#4B5563;margin-top:2px">\${escHtml(cust.address)}</div>\` : ''}
+    </div>
+    <div class="info-cell">
+      <div class="lbl">Place of Inspection:</div>
+      <div class="val">\${escHtml(cert.placeOfInspection || cert.location || '-')}</div>
+    </div>
+    <div class="info-cell">
+      <div class="lbl">Manufacturer OR Supplier:</div>
+      <div class="val">\${escHtml(cert.manufacturer || company.name || '-')}</div>
+    </div>
+    <div class="info-cell">
+      <div class="lbl">Order No. / Project No.:</div>
+      <div class="val mono">\${cert.orderNo ? 'Order: ' + escHtml(cert.orderNo) : ''}\${cert.orderNo && cert.projectNo ? '<br>' : ''}\${cert.projectNo ? 'Project: ' + escHtml(cert.projectNo) : ''}\${!cert.orderNo && !cert.projectNo ? '-' : ''}</div>
+    </div>
+    <div class="info-cell" style="grid-column:1/-1">
+      <div class="lbl">Intended For:</div>
+      <div class="val">\${escHtml(cert.intendedFor || cust.name || '-')}</div>
+    </div>
+  </div>
+
+  <!-- REFERENCE STANDARDS -->
+  \${refStandards ? \`
+  <div class="ref-box">
+    <div class="lbl">Reference Standards:</div>
+    <div>\${refStandards}</div>
+  </div>
+  \` : ''}
+
+  <!-- ITEMS TABLE -->
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th>ID No.</th>
+        <th>Qty.</th>
+        <th>Equipment Description</th>
+        <th>SWL<span class="en">(Tonne)</span></th>
+        <th>Test Load Applied<span class="en">(Tonne)</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      \${(() => {
+        // Group consecutive items that share an identical description into a merged-description block
+        const blocks = [];
+        let curBlock = null;
+        items.forEach(it => {
+          if (curBlock && curBlock.desc === (it.description || '')) {
+            curBlock.items.push(it);
+          } else {
+            curBlock = { desc: it.description || '', items: [it] };
+            blocks.push(curBlock);
+          }
+        });
+        let html = '';
+        blocks.forEach(blk => {
+          blk.items.forEach((it, idx) => {
+            html += '<tr>';
+            html += \`<td class="id-no">\${escHtml(it.idNo || '-')}</td>\`;
+            html += \`<td class="qty">\${escHtml(String(it.qty || '1'))}</td>\`;
+            if (idx === 0) {
+              html += \`<td class="desc desc-merged" rowspan="\${blk.items.length}"><div class="desc-content">\${escHtml(blk.desc).replace(/\\n/g, '<br>')}</div></td>\`;
+            }
+            html += \`<td class="swl">\${escHtml(String(it.swl || '-'))}</td>\`;
+            html += \`<td class="testload">\${escHtml(String(it.testLoad || '-'))}</td>\`;
+            html += '</tr>';
+          });
+        });
+        return html;
+      })()}
+    </tbody>
+  </table>
+
+  <!-- DATE TABLE (Last/Next Examination & Proof Load Test) -->
+  <table class="date-table">
+    <thead>
+      <tr>
+        <th>Date of Last Examination</th>
+        <th>Date of Next Examination</th>
+        <th>Date of Last Proof Load Test</th>
+        <th>Date of Next Proof Load Test</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <b>\${cert.dateLastExam ? escHtml(dateFmt(cert.dateLastExam)) : 'N/A'}</b>
+          <small>Cert. No. \${escHtml(cert.lastExamCertNo || 'N/A')}</small>
+        </td>
+        <td>
+          <b>\${cert.dateNextExam ? escHtml(dateFmt(cert.dateNextExam)) : escHtml(dateFmt(cert.validUntil) || 'N/A')}</b>
+          <small>\${escHtml(cert.dateNextExamNote || '')}</small>
+        </td>
+        <td>
+          <b>\${cert.dateLastProof ? escHtml(dateFmt(cert.dateLastProof)) : 'N/A'}</b>
+          <small>Cert. No. \${escHtml(cert.lastProofCertNo || 'N/A')}</small>
+        </td>
+        <td>
+          <b>\${cert.dateNextProof ? escHtml(dateFmt(cert.dateNextProof)) : 'After substantial repair'}</b>
+          <small>\${escHtml(cert.dateNextProofNote || 'or alteration')}</small>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- DNV-style RESULT badge (subtle) -->
+  <div class="dnv-result">
+    <div>QUALITY</div>
+    <div class="big">\${passText}</div>
+    <div>\${cert.standard ? escHtml(cert.standard.slice(0, 20)) : 'CERTIFIED'}</div>
+  </div>
+
+  <!-- SIGNATURES -->
+  <div class="dnv-signs">
+    <div class="dnv-sig">
+      <div class="dnv-sig-label">Authorized Name:</div>
+      <div class="dnv-sig-name">\${escHtml(cert.authorizedName || '')}</div>
+      <div class="dnv-sig-sigline">Authorized Signature:</div>
+    </div>
+    <div class="dnv-sig">
+      <div class="dnv-sig-label">Surveyor's Name:</div>
+      <div class="dnv-sig-name">\${escHtml(cert.inspector || cert.surveyorName || '')}</div>
+      <div class="dnv-sig-sigline">Surveyor's Signature:</div>
+    </div>
+  </div>
+
+  <!-- LEGAL DISCLAIMER -->
+  <div class="legal">
+    <b>LEGAL DISCLAIMER:</b> THIS IS TO CERTIFY THAT the above competent surveyor thoroughly examined the lifting equipment in the above-mentioned place as per relevant International Standard. \${escHtml(cert.legalDisclaimer || '')}
+  </div>
+
+  <!-- FOOTER -->
+  <div class="page-footer">
+    \${company.name ? escHtml(company.name) : 'KCB SLING'} \${company.tel ? '• Tel: ' + escHtml(company.tel) : ''} \${company.email ? '• ' + escHtml(company.email) : ''}
+    <div class="form-code">
+      <span>Form code: \${escHtml(cert.formCode || 'ISI-INSP-5-7-A1-TH')} • Revision: \${escHtml(cert.revisionDate || new Date().toISOString().slice(0,7))}</span>
+      <span>Copyright © \${new Date().getFullYear()} \${escHtml(company.name || 'KCB SLING')}. All rights reserved.</span>
+    </div>
+  </div>
+</div>
+
+<script>window.onload=()=>setTimeout(()=>window.focus(),100);<\\/script>
+</body></html>\`;
+
+      const w = window.open('', '_blank', 'width=900,height=1100');
+      if (!w) { toast('กรุณาอนุญาต Pop-up เพื่อพิมพ์เอกสาร', 'error'); return; }
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+    }`
+  },
+
+  // --------------------------------------------------------------------------
+  // PATCH 4b: REPLACE openCertModal — DNV-style form with items[] array
+  // --------------------------------------------------------------------------
+  {
+    name: 'Certificate — DNV-style form (multi-item)',
+    find: /function openCertModal\(editId = null\) \{[\s\S]*?      openModal\(html\);\n    \}\n\n    function saveCertificate/,
+    replace: `function openCertModal(editId = null) {
+      const customers = DB.get('customers', []);
+      const all = DB.get('certificates', []);
+      const cert = editId ? all.find(c => c.id === editId) : null;
+      const isEdit = !!cert;
+
+      const newId = isEdit ? cert.id : genDocId(DB.get('company', {}).crtPrefix || 'CRT');
+      const today = todayStr();
+
+      // Initialize items array (support legacy single-item format)
+      window._certItems = JSON.parse(JSON.stringify(
+        cert?.items?.length ? cert.items : [{
+          idNo: cert?.serial || '',
+          qty: cert?.qty || '1',
+          description: (cert?.productType ? cert.productType : '') +
+                       (cert?.size ? '\\nSize: ' + cert.size : '') +
+                       (cert?.notes ? '\\n' + cert.notes : ''),
+          swl: cert?.swl || '',
+          testLoad: cert?.testLoad || ''
+        }]
+      ));
+
+      const html = \`
+        <div class="modal-content" style="max-width:1100px">
+          <div class="modal-header">
+            <h2>\${isEdit ? '✎ แก้ไขใบรับรอง' : '➕ สร้างใบรับรอง (DNV Style)'}</h2>
+            <button class="modal-close" onclick="closeModal()">×</button>
+          </div>
+          <div class="modal-body">
+
+            <!-- ===== Section 1: Document Info ===== -->
+            <h3 class="section-title">📋 ข้อมูลเอกสาร / Document Info</h3>
+            <div class="form-row row-triple">
+              <div class="form-group">
+                <label class="form-label">เลขที่ใบรับรอง / Cert No.</label>
+                <input type="text" id="certId" class="input" value="\${escHtml(newId)}" \${isEdit ? 'readonly' : ''}>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Revision</label>
+                <input type="text" id="certRevision" class="input" value="\${escHtml(cert?.revision || '0')}" placeholder="0">
+              </div>
+              <div class="form-group">
+                <label class="form-label">วันที่ตรวจสอบ / Date of Inspection <span style="color:#FF5722">*</span></label>
+                <input type="date" id="certTestDate" class="input" value="\${cert?.testDate || today}">
+              </div>
+            </div>
+
+            <!-- ===== Section 2: Client / Place / Order ===== -->
+            <h3 class="section-title">🏢 ข้อมูลลูกค้า / Client & Place</h3>
+            <div class="form-row row-double">
+              <div class="form-group">
+                <label class="form-label">ลูกค้า / Client <span style="color:#FF5722">*</span></label>
+                <select id="certCustomer" class="input">
+                  <option value="">— เลือกลูกค้า —</option>
+                  \${customers.map(c => \`<option value="\${c.id}" \${cert?.customerId === c.id ? 'selected' : ''}>\${escHtml(c.name)}</option>\`).join('')}
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">สถานที่ตรวจสอบ / Place of Inspection</label>
+                <input type="text" id="certPlace" class="input" value="\${escHtml(cert?.placeOfInspection || '')}" placeholder="เช่น KCB Factory, Lamlukka R., Pathumtanee">
+              </div>
+            </div>
+            <div class="form-row row-double">
+              <div class="form-group">
+                <label class="form-label">Manufacturer / Supplier</label>
+                <input type="text" id="certManufacturer" class="input" value="\${escHtml(cert?.manufacturer || '')}" placeholder="ผู้ผลิต/ผู้จำหน่าย">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Intended For (ใช้สำหรับ)</label>
+                <input type="text" id="certIntendedFor" class="input" value="\${escHtml(cert?.intendedFor || '')}" placeholder="เช่น Guangzhou Salvage Company">
+              </div>
+            </div>
+            <div class="form-row row-triple">
+              <div class="form-group">
+                <label class="form-label">Order No.</label>
+                <input type="text" id="certOrderNo" class="input" value="\${escHtml(cert?.orderNo || '')}">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Project No.</label>
+                <input type="text" id="certProjectNo" class="input" value="\${escHtml(cert?.projectNo || '')}" placeholder="10608358">
+              </div>
+              <div class="form-group">
+                <label class="form-label">อ้างอิงเอกสาร (SO/INV)</label>
+                <input type="text" id="certRefDoc" class="input" value="\${escHtml(cert?.refDoc || '')}">
+              </div>
+            </div>
+
+            <!-- ===== Section 3: Reference Standards ===== -->
+            <h3 class="section-title">📚 มาตรฐานอ้างอิง / Reference Standards</h3>
+            <div class="form-group">
+              <label class="form-label">รายละเอียดมาตรฐาน (ใส่ได้หลายบรรทัด - Enter เพื่อขึ้นบรรทัดใหม่)</label>
+              <textarea id="certReferenceStandards" class="input" rows="5" placeholder="เช่น:\\nPTTEP: General Instruction for PTTEP Lifting Equipment Integrity Inspection Procedure, Docs No. 10017-PDR-5-INT-012 R00\\nChevron Offshore Thailand: Portable Lifting Equipment Operation Practices Version 1.5\\nValeura Energy: Inspection of Lifting Equipment Procedure Docs No. TH-GEN-AI-QA-PRC-0139 Rev R2">\${escHtml(cert?.referenceStandards || '')}</textarea>
+            </div>
+
+            <!-- ===== Section 4: Items (multi-row) ===== -->
+            <h3 class="section-title" style="display:flex;justify-content:space-between;align-items:center">
+              <span>🔧 รายการอุปกรณ์ / Equipment Items</span>
+              <button class="btn btn-primary btn-sm" type="button" onclick="addCertItem()">+ เพิ่มรายการ</button>
+            </h3>
+            <table class="data-table items-table" style="font-size:13px">
+              <thead>
+                <tr>
+                  <th style="width:14%">ID No.</th>
+                  <th style="width:8%">Qty.</th>
+                  <th>Equipment Description</th>
+                  <th style="width:10%">SWL<br><small style="font-weight:400">(Tonne)</small></th>
+                  <th style="width:12%">Test Load<br><small style="font-weight:400">(Tonne)</small></th>
+                  <th style="width:5%"></th>
+                </tr>
+              </thead>
+              <tbody id="certItemsBody"></tbody>
+            </table>
+            <div style="margin-top:6px;font-size:11px;color:#6B7280">💡 รายการที่มี Description เหมือนกันจะถูกรวมเป็นกลุ่มอัตโนมัติเมื่อพิมพ์ออกมา (เหมือนแบบ DNV)</div>
+
+            <!-- ===== Section 5: Date Examination Schedule ===== -->
+            <h3 class="section-title">📅 ตารางวันตรวจสอบ / Examination Schedule</h3>
+            <div class="form-row row-quad">
+              <div class="form-group">
+                <label class="form-label">Date of Last Examination</label>
+                <input type="date" id="certDateLastExam" class="input" value="\${cert?.dateLastExam || ''}">
+                <input type="text" id="certLastExamCertNo" class="input" style="margin-top:6px;font-size:12px" placeholder="Cert. No. (last)" value="\${escHtml(cert?.lastExamCertNo || '')}">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Date of Next Examination</label>
+                <input type="date" id="certDateNextExam" class="input" value="\${cert?.dateNextExam || cert?.validUntil || addDays(todayStr(), 365)}">
+                <input type="text" id="certDateNextExamNote" class="input" style="margin-top:6px;font-size:12px" placeholder="หมายเหตุ (เช่น 'PTTEP, Chevron')" value="\${escHtml(cert?.dateNextExamNote || '')}">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Date of Last Proof Load Test</label>
+                <input type="date" id="certDateLastProof" class="input" value="\${cert?.dateLastProof || ''}">
+                <input type="text" id="certLastProofCertNo" class="input" style="margin-top:6px;font-size:12px" placeholder="Cert. No. (proof)" value="\${escHtml(cert?.lastProofCertNo || '')}">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Date of Next Proof Load Test</label>
+                <input type="date" id="certDateNextProof" class="input" value="\${cert?.dateNextProof || ''}">
+                <input type="text" id="certDateNextProofNote" class="input" style="margin-top:6px;font-size:12px" placeholder="เช่น 'After substantial repair'" value="\${escHtml(cert?.dateNextProofNote || 'After substantial repair or alteration')}">
+              </div>
+            </div>
+
+            <!-- ===== Section 6: Test Method & Result ===== -->
+            <h3 class="section-title">🔬 วิธีและผลการทดสอบ / Test Method & Result</h3>
+            <div class="form-row row-double">
+              <div class="form-group">
+                <label class="form-label">มาตรฐาน / Standard</label>
+                <input type="text" id="certStandard" class="input" value="\${escHtml(cert?.standard || 'EN 13414-1 / ISO 7531')}">
+              </div>
+              <div class="form-group">
+                <label class="form-label">วิธีทดสอบ / Test Method</label>
+                <input type="text" id="certMethod" class="input" value="\${escHtml(cert?.method || 'Proof Load Test')}">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">ผลทดสอบ <span style="color:#FF5722">*</span></label>
+              <select id="certResult" class="input">
+                <option value="pass" \${cert?.result === 'pass' ? 'selected' : ''}>✓ ผ่าน / Pass</option>
+                <option value="fail" \${cert?.result === 'fail' ? 'selected' : ''}>✗ ไม่ผ่าน / Fail</option>
+                <option value="pending" \${cert?.result === 'pending' ? 'selected' : ''}>⏳ รอผล / Pending</option>
+              </select>
+            </div>
+
+            <!-- ===== Section 7: Signatures ===== -->
+            <h3 class="section-title">✍️ ลายเซ็น / Signatures</h3>
+            <div class="form-row row-double">
+              <div class="form-group">
+                <label class="form-label">Authorized Name (ผู้อนุมัติ)</label>
+                <input type="text" id="certAuthorizedName" class="input" value="\${escHtml(cert?.authorizedName || '')}" placeholder="ชื่อผู้มีอำนาจอนุมัติ">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Surveyor's Name (ผู้ตรวจสอบ)</label>
+                <input type="text" id="certInspector" class="input" value="\${escHtml(cert?.inspector || cert?.surveyorName || '')}" placeholder="ชื่อผู้ตรวจสอบ">
+              </div>
+            </div>
+
+            <!-- ===== Section 8: Legal & Form Code ===== -->
+            <h3 class="section-title">📄 ข้อมูลเพิ่มเติม / Additional Info</h3>
+            <div class="form-row row-double">
+              <div class="form-group">
+                <label class="form-label">Form Code</label>
+                <input type="text" id="certFormCode" class="input" value="\${escHtml(cert?.formCode || 'ISI-INSP-5-7-A1-TH')}">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Revision Date (Form)</label>
+                <input type="text" id="certRevisionDate" class="input" value="\${escHtml(cert?.revisionDate || new Date().toISOString().slice(0,7))}">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Legal Disclaimer (เพิ่มเติม)</label>
+              <textarea id="certLegalDisclaimer" class="input" rows="3" placeholder="ข้อความเพิ่มเติมในส่วน Legal Disclaimer (ถ้ามี)">\${escHtml(cert?.legalDisclaimer || '')}</textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal()">ยกเลิก</button>
+            <button class="btn btn-primary" onclick="saveCertificate('\${editId || ''}', false)">💾 บันทึก</button>
+            <button class="btn btn-primary" onclick="saveCertificate('\${editId || ''}', true)">💾 บันทึก & ดูใบรับรอง</button>
+          </div>
+        </div>
+      \`;
+      openModal(html);
+      renderCertItems();
+    }
+
+    function renderCertItems() {
+      const body = document.getElementById('certItemsBody');
+      if (!body) return;
+      if (!window._certItems.length) {
+        body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#9CA3AF">ยังไม่มีรายการ — กด "+ เพิ่มรายการ"</td></tr>';
+        return;
+      }
+      body.innerHTML = window._certItems.map((it, i) => \`
+        <tr data-cert-item="\${i}">
+          <td><input type="text" class="input" data-field="idNo" value="\${escHtml(it.idNo || '')}" placeholder="KCB-18091" style="font-family:monospace;font-size:12px;padding:8px"></td>
+          <td><input type="text" class="input" data-field="qty" value="\${escHtml(String(it.qty || '1'))}" style="text-align:center;font-size:12px;padding:8px"></td>
+          <td><textarea class="input" data-field="description" rows="3" placeholder="-Diameter and Length: Ø 30 mm x 1,000 cm.&#10;-Description: galvanized steel wire rope, 6x36, IWRC, RHRL&#10;-End: Soft eye size 50 cm., ferrule type C" style="font-size:12px;padding:8px;line-height:1.5;resize:vertical;min-height:60px">\${escHtml(it.description || '')}</textarea></td>
+          <td><input type="text" class="input" data-field="swl" value="\${escHtml(String(it.swl || ''))}" placeholder="12.00" style="text-align:center;font-family:monospace;font-size:12px;padding:8px"></td>
+          <td><input type="text" class="input" data-field="testLoad" value="\${escHtml(String(it.testLoad || ''))}" placeholder="24.00" style="text-align:center;font-family:monospace;font-size:12px;padding:8px"></td>
+          <td style="text-align:center"><button type="button" class="btn btn-icon btn-danger" onclick="removeCertItem(\${i})" title="ลบ" style="padding:6px 10px">×</button></td>
+        </tr>
+      \`).join('');
+      // Bind inputs to sync to window._certItems
+      body.querySelectorAll('[data-field]').forEach(el => {
+        el.addEventListener('input', e => {
+          const row = e.target.closest('tr[data-cert-item]');
+          if (!row) return;
+          const i = parseInt(row.dataset.certItem);
+          const f = e.target.dataset.field;
+          if (window._certItems[i]) window._certItems[i][f] = e.target.value;
+        });
+      });
+    }
+
+    function addCertItem() {
+      // Default: copy from the last item but increment idNo if it ends with a number
+      const last = window._certItems[window._certItems.length - 1] || {};
+      let nextIdNo = '';
+      if (last.idNo) {
+        const m = String(last.idNo).match(/^(.*?)(\\d+)$/);
+        if (m) nextIdNo = m[1] + (parseInt(m[2]) + 1);
+      }
+      window._certItems.push({
+        idNo: nextIdNo,
+        qty: '1',
+        description: last.description || '',
+        swl: last.swl || '',
+        testLoad: last.testLoad || ''
+      });
+      renderCertItems();
+    }
+
+    function removeCertItem(i) {
+      window._certItems.splice(i, 1);
+      if (window._certItems.length === 0) {
+        window._certItems.push({ idNo: '', qty: '1', description: '', swl: '', testLoad: '' });
+      }
+      renderCertItems();
+    }
+
+    function saveCertificate`
+  },
+
+  // --------------------------------------------------------------------------
+  // PATCH 4c: REPLACE saveCertificate to save items[] and DNV fields
+  // --------------------------------------------------------------------------
+  {
+    name: 'Certificate — saveCertificate with items[]',
+    find: /function saveCertificate\(editId, alsoPreview\) \{[\s\S]*?      if \(alsoPreview\) setTimeout\(\(\) => previewCertificate\(savedId\), 200\);\n    \}/,
+    replace: `function saveCertificate(editId, alsoPreview) {
+      const customerId = document.getElementById('certCustomer').value;
+      const testDate = document.getElementById('certTestDate').value;
+      if (!customerId) { toast('กรุณาเลือกลูกค้า', 'error'); return; }
+      if (!testDate) { toast('กรุณาระบุวันที่ทดสอบ', 'error'); return; }
+
+      // Sync items from DOM one more time (in case user typed and didn't blur)
+      const body = document.getElementById('certItemsBody');
+      if (body) {
+        body.querySelectorAll('tr[data-cert-item]').forEach(row => {
+          const i = parseInt(row.dataset.certItem);
+          if (window._certItems[i]) {
+            row.querySelectorAll('[data-field]').forEach(el => {
+              window._certItems[i][el.dataset.field] = el.value;
+            });
+          }
+        });
+      }
+
+      // Validate at least one item
+      const validItems = (window._certItems || []).filter(it => (it.idNo || '').trim() || (it.description || '').trim());
+      if (validItems.length === 0) { toast('กรุณาเพิ่มรายการอุปกรณ์อย่างน้อย 1 รายการ', 'error'); return; }
+
+      const all = DB.get('certificates', []);
+      let cert;
+      if (editId) {
+        cert = all.find(c => c.id === editId);
+        if (!cert) { toast('ไม่พบใบรับรอง', 'error'); return; }
+      } else {
+        cert = { id: document.getElementById('certId').value || genDocId('CRT'), createdAt: new Date().toISOString() };
+        all.push(cert);
+      }
+      // Core fields
+      cert.customerId = customerId;
+      cert.testDate = testDate;
+      cert.revision = document.getElementById('certRevision').value;
+      // Location / parties
+      cert.placeOfInspection = document.getElementById('certPlace').value;
+      cert.manufacturer = document.getElementById('certManufacturer').value;
+      cert.intendedFor = document.getElementById('certIntendedFor').value;
+      cert.orderNo = document.getElementById('certOrderNo').value;
+      cert.projectNo = document.getElementById('certProjectNo').value;
+      cert.refDoc = document.getElementById('certRefDoc').value;
+      // Standards & method
+      cert.referenceStandards = document.getElementById('certReferenceStandards').value;
+      cert.standard = document.getElementById('certStandard').value;
+      cert.method = document.getElementById('certMethod').value;
+      cert.result = document.getElementById('certResult').value;
+      // Items (the big addition)
+      cert.items = validItems;
+      // Date schedule
+      cert.dateLastExam = document.getElementById('certDateLastExam').value;
+      cert.dateNextExam = document.getElementById('certDateNextExam').value;
+      cert.validUntil = cert.dateNextExam; // keep legacy field in sync
+      cert.dateNextExamNote = document.getElementById('certDateNextExamNote').value;
+      cert.dateLastProof = document.getElementById('certDateLastProof').value;
+      cert.dateNextProof = document.getElementById('certDateNextProof').value;
+      cert.dateNextProofNote = document.getElementById('certDateNextProofNote').value;
+      cert.lastExamCertNo = document.getElementById('certLastExamCertNo').value;
+      cert.lastProofCertNo = document.getElementById('certLastProofCertNo').value;
+      // Signatures
+      cert.authorizedName = document.getElementById('certAuthorizedName').value;
+      cert.inspector = document.getElementById('certInspector').value;
+      cert.surveyorName = cert.inspector; // alias
+      // Form code
+      cert.formCode = document.getElementById('certFormCode').value;
+      cert.revisionDate = document.getElementById('certRevisionDate').value;
+      cert.legalDisclaimer = document.getElementById('certLegalDisclaimer').value;
+      // Legacy fields (for backward-compat with the list view)
+      cert.productType = (validItems[0].description || '').split('\\n')[0].slice(0, 80);
+      cert.swl = validItems[0].swl;
+      cert.testLoad = validItems[0].testLoad;
+      cert.serial = validItems[0].idNo;
+      cert.qty = validItems.reduce((s, it) => s + (parseInt(it.qty) || 0), 0);
+      cert.updatedAt = new Date().toISOString();
+
+      DB.set('certificates', all);
+      delete window._certItems;
+      closeModal();
+      toast('บันทึกใบรับรองสำเร็จ', 'success');
+      const savedId = cert.id;
+      if (currentPage === 'certificates') renderCertificates();
+      if (alsoPreview) setTimeout(() => previewCertificate(savedId), 200);
+    }`
+  }
+];
+
+// ============================================================================
+// PATCHER ENGINE
+// ============================================================================
+runBtn.addEventListener('click', async () => {
+  if (!srcContent) {
+    log('❌ ไม่พบไฟล์', 'err');
+    return;
+  }
+
+  runBtn.disabled = true;
+  clearLog();
+  setProgress(0);
+  log('🚀 เริ่ม Patching...', 'info');
+  log('');
+
+  let working = srcContent;
+  let appliedCount = 0;
+  let failedPatches = [];
+
+  for (let i = 0; i < PATCHES.length; i++) {
+    const p = PATCHES[i];
+    setProgress((i / PATCHES.length) * 100);
+    log(\`[\${i+1}/\${PATCHES.length}] \${p.name}...\`);
+    await new Promise(r => setTimeout(r, 80));
+
+    const before = working.length;
+    const match = working.match(p.find);
+    if (!match) {
+      log(\`  ⚠️ ไม่พบส่วนที่ต้อง patch (อาจถูก patch ไปแล้ว หรือเป็นเวอร์ชันอื่น)\`, 'warn');
+      failedPatches.push(p.name);
+      continue;
+    }
+    working = working.replace(p.find, p.replace);
+    const diff = working.length - before;
+    log(\`  ✓ สำเร็จ (\${diff >= 0 ? '+' : ''}\${diff} bytes)\`, 'ok');
+    appliedCount++;
+  }
+
+  setProgress(100);
+  log('');
+  log('───────────────────────', 'info');
+  log(\`✅ Patch สำเร็จ \${appliedCount}/\${PATCHES.length} รายการ\`, appliedCount === PATCHES.length ? 'ok' : 'warn');
+  if (failedPatches.length > 0) {
+    log('');
+    log('⚠️ Patch ที่ไม่ได้ใช้:', 'warn');
+    failedPatches.forEach(n => log('  • ' + n, 'warn'));
+    log('  (อาจเป็นเพราะไฟล์ถูก patch ไปแล้ว หรือเวอร์ชันต่างกัน)', 'warn');
+  }
+  log('');
+  log('📥 กำลังดาวน์โหลดไฟล์...', 'info');
+
+  // Update version marker in title
+  working = working.replace(/<title>KCB SLING ERP V5\.0<\/title>/, '<title>KCB SLING ERP V5.1</title>');
+  working = working.replace(/Claude Opus 4\.5/g, 'Claude Opus 4.7');
+
+  // Download
+  const blob = new Blob([working], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const newName = srcFilename.replace(/\.html?$/i, '') + '_V5.1.html';
+  a.download = newName;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  log('✅ ดาวน์โหลดเสร็จสิ้น: ' + newName, 'ok');
+  log('');
+  log('🎉 เสร็จแล้ว! เปิดไฟล์ใหม่ในเบราว์เซอร์เพื่อใช้งาน', 'ok');
+  log('');
+  log('📝 หมายเหตุ:', 'info');
+  log('  • ข้อมูลของคุณ (สินค้า/ลูกค้า/เอกสาร) จะยังอยู่ครบ', 'info');
+  log('  • ใบเซอร์เก่าจะถูกแปลงเป็นรูปแบบใหม่อัตโนมัติ', 'info');
+  log('  • Sync Google Sheet ใหม่อีกครั้งเพื่อดึงทุกแท็บ', 'info');
+
+  runBtn.disabled = false;
+  runBtn.innerHTML = '✅ Patch อีกครั้ง';
+});
+</script>
+</body>
+</html>
